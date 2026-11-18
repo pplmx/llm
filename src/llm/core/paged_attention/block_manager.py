@@ -277,7 +277,19 @@ class BlockManager:
         return new_id
 
     def get_block_table(self, seq_id: int) -> list[int]:
-        """Get the block table for a sequence."""
+        """Get the block table for a sequence.
+
+        Returns the LIVE list, deliberately — NOT a copy. Callers that mutate it
+        are relying on this: :meth:`PagedKVCache._copy_on_write_if_shared`
+        remaps entry ``block_idx`` in place, and the subsequent transformer
+        layers re-fetch the table expecting to see the new block. Handing out a
+        copy there would make a copy-on-write remap vanish, so the layer would
+        write into the still-shared block and corrupt the cached K/V its other
+        readers depend on.
+
+        A caller that only READS should not mutate the result; use
+        ``list(get_block_table(...))`` when a snapshot is wanted.
+        """
         if seq_id not in self.sequences:
             raise ValueError(f"Sequence {seq_id} does not exist")
         return self.sequences[seq_id].block_table

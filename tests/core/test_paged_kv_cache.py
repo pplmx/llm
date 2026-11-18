@@ -1232,3 +1232,42 @@ def test_construction_honours_an_explicit_device(monkeypatch):
 
     cache = PagedKVCache(num_layers=1, num_kv_heads=1, head_dim=4, num_blocks=8, block_size=4, device="cpu")
     assert cache.k_cache.device.type == "cpu"
+
+
+def test_get_block_table_returns_the_live_list_on_purpose():
+    """The block table must be LIVE, because copy-on-write remaps it in place.
+
+    ``_copy_on_write_if_shared`` assigns ``block_table[block_idx] = new_id`` so
+    the LATER transformer layers — which re-fetch the table — land in the private
+    block. Returning a copy there would make the remap vanish, and the next layer
+    would write into the still-shared block, corrupting the cached K/V its other
+    readers depend on.
+
+    This is the mirror image of a common defensive-copy fix: here the copy is the
+    bug. Pinned so a well-meaning "return a copy" change fails loudly instead of
+    silently breaking prefix sharing.
+    """
+    from llm.core.paged_attention.block_manager import BlockManager
+
+    manager = BlockManager(num_blocks=16, block_size=4)
+    manager.allocate_sequence("seq", 8)
+
+    live = manager.get_block_table("seq")
+    live[0] = 999
+
+    assert manager.get_block_table("seq")[0] == 999, (
+        "get_block_table returned a copy; copy-on-write remaps rely on it being the live list"
+    )
+
+
+def test_callers_that_want_a_snapshot_copy_it_themselves():
+    """A read-only caller gets a snapshot only by copying — documented, so pinned."""
+    from llm.core.paged_attention.block_manager import BlockManager
+
+    manager = BlockManager(num_blocks=16, block_size=4)
+    manager.allocate_sequence("seq", 8)
+
+    snapshot = list(manager.get_block_table("seq"))
+    snapshot[0] = 999
+
+    assert manager.get_block_table("seq")[0] != 999, "the snapshot leaked back into the manager"
