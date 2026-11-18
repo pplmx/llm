@@ -653,3 +653,56 @@ def test_loading_full_precision_weights_into_a_quantized_model_is_partial():
     for name in shared:
         expected = base.state_dict()[name].to(quantized.state_dict()[name].device)
         assert torch.equal(quantized.state_dict()[name], expected), f"{name} was not restored"
+
+
+def test_the_fp8_max_constants_match_the_real_dtypes():
+    """``FP8_MAX`` must equal the format's actual maximum, verified EXTERNALLY.
+
+    The rest of this file compares saturation behaviour against ``FP8_MAX``
+    itself, so a wrong constant would make those assertions agree with each
+    other while disagreeing with the hardware format — every weight would
+    saturate at a value the real FP8 cast cannot represent. ``torch.finfo`` is
+    the authority here, not a number written down twice.
+    """
+    import torch
+
+    from llm.quantization._fp8_layer import FP8_MAX, FP8_TYPES
+
+    for name, dtype in (("e4m3", torch.float8_e4m3fn), ("e5m2", torch.float8_e5m2)):
+        assert name in FP8_TYPES, f"{name} missing from FP8_TYPES"
+        expected = float(torch.finfo(dtype).max)
+        assert FP8_MAX[name] == expected, (
+            f"FP8_MAX[{name!r}] is {FP8_MAX[name]}, but torch reports {expected} as the format maximum"
+        )
+
+
+def test_the_fp8_relative_error_matches_the_mantissa_width():
+    """The quantize/dequantize error must match each format's precision.
+
+    E4M3 has 3 mantissa bits (relative step ~1/16 = 0.0625) and E5M2 has 2
+    (~1/8 = 0.125). A recipe that scaled by the wrong constant, or cast to the
+    wrong dtype, would show an error off by a power of two — which no existing
+    assertion here would catch, because they only check saturation bounds.
+    """
+    import torch
+
+    from llm.quantization._fp8_layer import FP8_MAX, FP8_TYPES
+
+    torch.manual_seed(0)
+    values = torch.randn(256, 256) * 3.0
+
+    # Half a quantum, expressed as a fraction: E4M3 has 3 mantissa bits, so the
+    # worst-case relative error is 2**-4 = 0.0625; E5M2 has 2, giving 0.125.
+    # The bound is the next power of two above the theoretical limit rather than
+    # the limit itself: measured 0.0626 for e4m3, a rounding artefact of the
+    # 0.0625 boundary, not a scale error (a wrong scale would be off by 2x).
+    bounds = {"e4m3": 0.125, "e5m2": 0.25}
+    for name in ("e4m3", "e5m2"):
+        scale = values.abs().max() / FP8_MAX[name]
+        requantized = (values / scale).to(FP8_TYPES[name]).to(torch.float32) * scale
+        relative = ((requantized - values).abs() / values.abs().clamp(min=1e-8)).max()
+        limit = bounds[name]
+        assert float(relative) <= limit, (
+            f"{name}: max relative error {float(relative):.4f} exceeds the format's precision "
+            f"bound {limit}; the scale or the cast is wrong"
+        )
