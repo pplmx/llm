@@ -266,6 +266,44 @@ def _pack_q6_k_group(ql: np.ndarray, qh: np.ndarray, group: int, size: int, qv: 
         qh[byte] |= np.uint8(hi << shift)
 
 
+def _k_block_scales(groups: np.ndarray) -> tuple[float, float, np.ndarray]:
+    """Pick ``(dval, dminval)`` for one K-quant block, returning the group spans.
+
+    The K-quant decode is ``d * sc * q - dmin * m`` with ``q`` in ``[0, 15]`` and
+    ``m`` in ``[0, 63]``: the span term carries the RANGE and the ``dmin * m``
+    term carries a NEGATIVE offset. A block whose values are all positive
+    constants has no range and no negative minimum, so the generic formulas
+    above choose ``d = dmin = 0`` and every quantized level collapses to zero —
+    measured: a constant ``3.5`` (or ``100.0``) block round-tripped to **0.0**
+    for Q4_K / Q2_K / Q5_K, while a constant ``-3.5`` survived because the
+    negative offset can express it.
+
+    For a constant block the value is encoded directly: a positive constant as
+    ``d = v/15, sc = 1, q = 15, m = 0``, a negative one as
+    ``dmin = -v/63, sc = 0, q = 0, m = 63``. Both decode to exactly ``v``.
+    Callers detect the constant case with ``span == 0`` and read ``dval`` /
+    ``dminval`` from here.
+    """
+    mins = groups.min(axis=1)
+    maxs = groups.max(axis=1)
+    spans = maxs - mins
+    max_span = float(spans.max()) if spans.size else 0.0
+    max_negmin = float(np.maximum(-mins, 0.0).max()) if mins.size else 0.0
+
+    if max_span == 0.0:
+        # Constant block (every element the same value, or all zeros).
+        value = float(mins[0]) if mins.size else 0.0
+        if value > 0.0:
+            return value / 15.0, 0.0, spans
+        if value < 0.0:
+            return 0.0, -value / 63.0, spans
+        return 0.0, 0.0, spans
+
+    dval = max_span / (15.0 * 63.0)
+    dminval = max_negmin / 63.0 if max_negmin > 0.0 else 0.0
+    return dval, dminval, spans
+
+
 def quantize_q4_k(data: np.ndarray) -> np.ndarray:
     """Quantize float data to Q4_K blocks (256-wide), returning the packed bytes.
 
@@ -292,12 +330,7 @@ def quantize_q4_k(data: np.ndarray) -> np.ndarray:
     for b in range(n_blocks):
         groups = blocks[b].reshape(8, 32).astype(np.float32)
         mins = groups.min(axis=1)
-        maxs = groups.max(axis=1)
-        spans = maxs - mins
-        max_span = float(spans.max()) if spans.size else 0.0
-        max_negmin = float(np.maximum(-mins, 0.0).max()) if mins.size else 0.0
-        dval = max_span / (15.0 * 63.0) if max_span > 0.0 else 0.0
-        dminval = max_negmin / 63.0 if max_negmin > 0.0 else 0.0
+        dval, dminval, spans = _k_block_scales(groups)
         d[b] = np.float16(dval)
         dmin[b] = np.float16(dminval)
 
@@ -376,6 +409,22 @@ def quantize_q2_k(data: np.ndarray) -> np.ndarray:
         # drives ml (up to 15 * dmin), so dmin = max_negmin/15.
         dval = max_span / (3.0 * 15.0) if max_span > 0.0 else 0.0
         dminval = max_negmin / 15.0 if max_negmin > 0.0 else 0.0
+        if max_span == 0.0:
+            # Constant block: the generic formulas give d = dmin = 0, so every
+            # level collapses and a positive constant round-trips to 0.0
+            # (measured for Q4_K / Q2_K / Q5_K). Encode the value directly.
+            #
+            # Q2_K decodes ``dl * q - ml`` with ``dl = d * n_dl``, ``q`` in
+            # [0, 3] and ``n_dl`` in [1, 15]. The reach is therefore
+            # ``d * n_dl * 3``, and the levels below choose n_dl = 15, so
+            # ``d = v / (15 * 3)`` reproduces v exactly. Using v/45 with the
+            # default n_dl = 1 (which the loop only raises when a group has a
+            # span) landed on v/15 — 3.5 came back as 0.233.
+            _const = float(mins[0]) if mins.size else 0.0
+            if _const > 0.0:
+                dval = _const / (15.0 * 3.0)
+            elif _const < 0.0:
+                dminval = -_const / 15.0
         d[b] = np.float16(dval)
         dmin[b] = np.float16(dminval)
 
@@ -385,6 +434,10 @@ def quantize_q2_k(data: np.ndarray) -> np.ndarray:
             n_dl = 1
             if dval > 0.0 and gspan > 0.0:
                 n_dl = int(np.clip(round(gspan / (3.0 * dval)), 1, 15))
+            elif dval > 0.0 and max_span == 0.0:
+                # Constant positive block: use the full 15-level field so the
+                # encoded value is q = 3 with dl = 15 * d (see the note above).
+                n_dl = 15
             n_ml = 0
             if dminval > 0.0:
                 n_ml = int(np.clip(round(-gmin / dminval), 0, 15))
@@ -440,6 +493,15 @@ def quantize_q5_k(data: np.ndarray) -> np.ndarray:
         max_negmin = float(np.maximum(-mins, 0.0).max()) if mins.size else 0.0
         dval = max_span / (31.0 * 63.0) if max_span > 0.0 else 0.0
         dminval = max_negmin / 63.0 if max_negmin > 0.0 else 0.0
+        if max_span == 0.0:
+            # Constant block: see ``_k_block_scales``. A positive constant would
+            # otherwise round-trip to 0.0 because the offset term cannot express
+            # it. Q5_K's low field carries up to 31 levels, hence v/31.
+            _const = float(mins[0]) if mins.size else 0.0
+            if _const > 0.0:
+                dval = _const / 31.0
+            elif _const < 0.0:
+                dminval = -_const / 63.0
         d[b] = np.float16(dval)
         dmin[b] = np.float16(dminval)
 

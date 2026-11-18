@@ -632,3 +632,87 @@ def test_random_payloads_really_do_exercise_non_finite_scales():
         f"none of {trials} uniformly random Q5_K payloads produced a non-finite value — "
         "the degenerate scale paths are no longer exercised"
     )
+
+
+# --- constant blocks must survive the round trip ---------------------------
+#
+# The K-quant decode is ``d * sc * q - dmin * m``: the span term carries the
+# RANGE and the ``dmin * m`` term carries a NEGATIVE offset. A block of equal
+# POSITIVE values has neither, so the generic formulas chose d = dmin = 0 and
+# every level collapsed to zero. Measured: a constant 3.5 (or 100.0) block
+# round-tripped to 0.0 for Q4_K / Q2_K / Q5_K, while a constant -3.5 survived
+# because the negative offset can express it.
+
+
+@pytest.mark.parametrize("value", [3.5, 100.0, -3.5, -100.0, 1e-3, -1e-3])
+@pytest.mark.parametrize(
+    ("qtype", "quantize", "dequantize"),
+    [
+        (GGMLQuantizationType.Q4_K, "quantize_q4_k", "dequantize_q4_k"),
+        (GGMLQuantizationType.Q5_K, "quantize_q5_k", "dequantize_q5_k"),
+        (GGMLQuantizationType.Q2_K, "quantize_q2_k", "dequantize_q2_k"),
+        (GGMLQuantizationType.Q6_K, "quantize_q6_k", "dequantize_q6_k"),
+    ],
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_a_constant_block_round_trips(qtype, quantize, dequantize, value):
+    """A block of identical values must come back as that value, not zero.
+
+    This is the sharpest form of the bug: the input has no range at all, so the
+    only thing the quantizer can get wrong is the absolute level — and getting
+    it wrong means the value vanishes entirely.
+    """
+    from llm.export.gguf import quant as gq
+
+    data = np.full(256, value, dtype=np.float32)
+    packed = getattr(gq, quantize)(data)
+    restored = getattr(gq, dequantize)(packed, data.size)
+
+    assert np.allclose(restored, value, rtol=0.05), (
+        f"{qtype.name}: a constant {value} block restored as {restored[0]:.6f}; "
+        "positive constants lost the value entirely before the fix"
+    )
+
+
+@pytest.mark.parametrize(
+    ("quantize", "dequantize"),
+    [
+        ("quantize_q4_k", "dequantize_q4_k"),
+        ("quantize_q5_k", "dequantize_q5_k"),
+        ("quantize_q2_k", "dequantize_q2_k"),
+        ("quantize_q6_k", "dequantize_q6_k"),
+    ],
+)
+def test_a_zero_block_stays_zero(quantize, dequantize):
+    """All-zeros is the degenerate constant block and must stay exactly zero."""
+    from llm.export.gguf import quant as gq
+
+    data = np.zeros(256, dtype=np.float32)
+    restored = getattr(gq, dequantize)(getattr(gq, quantize)(data), data.size)
+    assert np.array_equal(restored, np.zeros(256, dtype=np.float32))
+
+
+@pytest.mark.parametrize(
+    ("quantize", "dequantize", "reference_rel_err"),
+    [
+        ("quantize_q4_k", "dequantize_q4_k", 0.0771),
+        ("quantize_q5_k", "dequantize_q5_k", 0.0378),
+        ("quantize_q2_k", "dequantize_q2_k", 0.3172),
+        ("quantize_q6_k", "dequantize_q6_k", 0.0279),
+    ],
+)
+def test_the_constant_block_fix_does_not_change_normal_data(quantize, dequantize, reference_rel_err):
+    """The fix must not perturb ordinary blocks.
+
+    Pinned to the measured value so a change to the general path shows up here
+    rather than silently widening every quantizer's error.
+    """
+    from llm.export.gguf import quant as gq
+
+    rng = np.random.default_rng(0)
+    data = rng.standard_normal(256).astype(np.float32)
+    restored = getattr(gq, dequantize)(getattr(gq, quantize)(data), data.size)
+    relative = float(np.linalg.norm(restored - data) / np.linalg.norm(data))
+    assert abs(relative - reference_rel_err) < 1e-3, (
+        f"normal-data error moved from {reference_rel_err} to {relative:.4f}"
+    )
