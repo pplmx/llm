@@ -77,6 +77,9 @@ Not 100%, and the residue is understood rather than waved away:
   (outlines, llguidance) solve this with token-level automata plus rollback; that
   is a substantially larger piece of work and is not attempted here.
 
+The remaining 1/30 is the truncation case above (a string cut mid-value), not a
+grammar defect. Closing the gap would need the token-level automaton.
+
 So the contract is now: **the server prevents most malformed replies and checks
 every one of them.** That is stronger than the previous "we only check", and
 weaker than OpenAI's guarantee. Both halves are stated in the CHANGELOG.
@@ -91,6 +94,16 @@ Two defects found while wiring it, both caught by measurement rather than review
 2. Leading whitespace had to be **refused** at position 0. JSON permits it, so the
    grammar allowed it, and a model free to emit spaces emits nothing else —
    measured: 40 constrained tokens of pure blank.
+3. A single "digit-ish" state accepted `14e`, `19-` and `07`. Those three shapes
+   were EVERY numeric failure in the 30-seed sweep, so the number grammar became a
+   sub-automaton over `-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?`, cross-checked
+   against `json.dumps` (400/400 accepted) and `json.loads` (0 disagreements over
+   120 mutated documents).
+4. String bodies admitted **every** character, including raw control characters. A
+   run emitted a literal TAB inside a string and the document failed with
+   "Invalid control character". The exclusion set is now U+0000..U+001F; a bare
+   backslash and a bare quote are handled by their own transitions — excluding the
+   quote alongside them, as a first attempt did, made every string unclosable.
 
 ## Consequences
 

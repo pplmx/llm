@@ -41,9 +41,17 @@ from dataclasses import dataclass, field
 # Every character valid JSON can contain. Used to bound the vocabulary scan: a
 # token whose text has a character outside this set can never be emitted once
 # the constraint is active.
-# Sentinel returned when EVERY character is admissible (a JSON string body).
-# ``allowed_characters`` otherwise returns the concrete set a limit imposes.
+# Sentinel returned when the admissible set is "everything EXCEPT these"
+# (a JSON string body). ``allowed_characters`` otherwise returns the concrete set
+# a limit imposes.
 ANY_CHARACTER = "\x00<any>"
+
+# Characters a JSON string may NOT contain raw. RFC 8259: unescaped control
+# characters (U+0000..U+001F) are illegal. A bare backslash starts an escape and
+# a bare quote CLOSES the string, so both are handled by their own transitions
+# rather than excluded here — measured: excluding the quote made every string
+# unclosable.
+STRING_FORBIDDEN = frozenset(chr(code) for code in range(0x20))
 
 JSON_CHARS = frozenset('{}[],:"\\ \t\n\r0123456789+-.eEtruefalsn/bfu')
 
@@ -55,12 +63,61 @@ STRING = "string"
 STRING_ESCAPE = "string_escape"
 STRING_UNICODE = "string_unicode"
 NUMBER = "number"
+# Sub-states of the number automaton (see ``_advance_number``).
+NUM_SIGN = "num_sign"
+NUM_ZERO = "num_zero"
+NUM_INT = "num_int"
+NUM_DOT = "num_dot"
+NUM_FRAC = "num_frac"
+NUM_EXP = "num_exp"
+NUM_EXP_SIGN = "num_exp_sign"
+NUM_EXP_DIGITS = "num_exp_digits"
 LITERAL = "literal"
 EXPECT_COLON = "expect_colon"
 DONE = "done"
 FAILED = "failed"
 
 _TRUE, _FALSE, _NULL = "true", "false", "null"
+
+
+# --- the number automaton --------------------------------------------------
+#
+# JSON numbers are ``-?(0|[1-9]\\d*)(\\.\\d+)?([eE][+-]?\\d+)?``. A single
+# "any digit-ish character" state accepted ``14e``, ``19-`` and ``07``, and
+# measured on 30 seeded runs those three shapes accounted for every numeric
+# failure. Tracking the sub-state makes the illegal forms unreachable.
+
+_NUMBER_STATES = frozenset({NUM_SIGN, NUM_ZERO, NUM_INT, NUM_DOT, NUM_FRAC, NUM_EXP, NUM_EXP_SIGN, NUM_EXP_DIGITS})
+
+# Which sub-state may TERMINATE the number: a number must not end on a sign,
+# a dot, or an exponent marker.
+_NUMBER_TERMINAL = frozenset({NUM_ZERO, NUM_INT, NUM_FRAC, NUM_EXP_DIGITS})
+
+
+def _number_allowed(state: str) -> frozenset[str]:
+    """Characters that CONTINUE the number from ``state``.
+
+    Empty means the number cannot grow further (it can only end or be followed
+    by a terminator).
+    """
+    if state == NUM_SIGN:
+        return frozenset("0123456789")
+    if state == NUM_ZERO:
+        # A leading zero ends the integer part; only a fraction or exponent may
+        # follow, so "07" is unreachable.
+        return frozenset(".eE")
+    if state == NUM_INT:
+        return frozenset("0123456789.eE")
+    if state == NUM_DOT:
+        # A dot must be followed by at least one digit.
+        return frozenset("0123456789")
+    if state == NUM_FRAC:
+        return frozenset("0123456789eE")
+    if state == NUM_EXP:
+        return frozenset("0123456789+-")
+    if state == NUM_EXP_SIGN:
+        return frozenset("0123456789")
+    return frozenset("0123456789")  # NUM_EXP_DIGITS
 
 
 @dataclass
@@ -110,9 +167,9 @@ class JSONGrammar:
         if state == DONE:
             return frozenset()
         if state == STRING:
-            # A string body is unbounded: any character except the two that need
-            # special handling (a bare backslash starts an escape; a quote closes
-            # it). Enumerating a fixed set here wrongly excluded ordinary letters.
+            # A string body admits any character EXCEPT the JSON-forbidden ones
+            # (raw control characters, a bare backslash, a bare quote). Listing
+            # the allowed set instead wrongly excluded ordinary letters.
             return ANY_CHARACTER
         if state == EXPECT_COLON:
             return frozenset(": \t\n\r")
@@ -122,18 +179,8 @@ class JSONGrammar:
             return frozenset("0123456789abcdefABCDEF")
         if state == LITERAL:
             return frozenset({self.literal_target[self.literal_index]})
-        if state == NUMBER:
-            # A number is ended by whatever may legally FOLLOW it: a closing
-            # bracket, a comma, whitespace. Restricting this set to digits made
-            # every numeric value unclosable ("{", '"', 'a', '"', ':', '1', '}'
-            # failed at the '}').
-            if self.stack:
-                top = self.stack[-1]
-                followers = frozenset("}") if top.kind == "object" else frozenset("]")
-                followers |= frozenset(", \t\n\r")
-            else:
-                followers = frozenset(" \t\n\r")
-            return frozenset("0123456789+-.eE") | followers
+        if state in _NUMBER_STATES:
+            return _number_allowed(state) | self._number_terminators()
         if state == VALUE:
             values = frozenset('{["tfn-0123456789')
             if not self.stack:
@@ -168,9 +215,13 @@ class JSONGrammar:
     def step(self, char: str) -> bool:
         """Advance by one character. Returns False when the char is illegal."""
         allowed = self.allowed_characters()
-        # ``ANY_CHARACTER`` marks a position (a string body) where the JSON
-        # grammar imposes no restriction, so the membership test is skipped.
-        if allowed is not ANY_CHARACTER and char not in allowed:
+        if allowed is ANY_CHARACTER:
+            # A string body: everything is admissible except the JSON-forbidden
+            # characters (raw control characters, bare backslash, bare quote).
+            if char in STRING_FORBIDDEN:
+                self.state = FAILED
+                return False
+        elif char not in allowed:
             self.state = FAILED
             return False
         self._advance(char)
@@ -194,7 +245,10 @@ class JSONGrammar:
         """
         if self.state == DONE:
             return True
-        if self.state == NUMBER and not self.stack:
+        if self.state in _NUMBER_STATES and not self.stack and self.state in _NUMBER_TERMINAL:
+            # A top-level number completes at end-of-input, but only when the
+            # number itself is complete: "14e" is not, and reporting it as
+            # finished let a decoder stop on an invalid document.
             return True
         return bool(self.state == AFTER_VALUE and not self.stack)
 
@@ -249,12 +303,8 @@ class JSONGrammar:
                 self._value_completed()
             return
 
-        if state == NUMBER:
-            if char in "0123456789+-.eE":
-                return
-            # A number ends the moment a non-number character arrives.
-            self._value_completed()
-            self._advance(char)
+        if state in _NUMBER_STATES:
+            self._advance_number(char)
             return
 
         if state == VALUE:
@@ -318,11 +368,74 @@ class JSONGrammar:
             self._begin_literal(_NULL)
             return
         if char in "-0123456789":
-            self.state = NUMBER
+            self._begin_number(char)
             return
         if char in " \t\n\r":
             return  # whitespace inside a container, before a value
         self.state = FAILED
+
+    def _number_terminators(self) -> frozenset[str]:
+        """Characters that may FOLLOW a finished number.
+
+        Only legal when the number is in a terminal sub-state — a number must not
+        end on a sign, a dot or an exponent marker.
+        """
+        if self.state not in _NUMBER_TERMINAL:
+            return frozenset()
+        if self.stack:
+            top = self.stack[-1]
+            closer = frozenset("}") if top.kind == "object" else frozenset("]")
+            return closer | frozenset(", \t\n\r")
+        # At the TOP level a number ends at end-of-input, which the grammar
+        # cannot express as a character. Whitespace stands in for it: forbidding
+        # it made the number unclosable and halved the success rate (measured).
+        return frozenset(" \t\n\r")
+
+    def _begin_number(self, char: str) -> None:
+        if char == "-":
+            self.state = NUM_SIGN
+        elif char == "0":
+            self.state = NUM_ZERO
+        else:
+            self.state = NUM_INT
+
+    def _advance_number(self, char: str) -> None:
+        """Step the number sub-automaton, or end the number and reprocess."""
+        state = self.state
+        if char in _number_allowed(state):
+            if state in (NUM_ZERO, NUM_INT, NUM_FRAC, NUM_EXP_DIGITS) and char in "0123456789":
+                # Stay: only a zero start has a special "cannot grow" rule.
+                self.state = (
+                    NUM_EXP_DIGITS
+                    if state == NUM_EXP_DIGITS
+                    else (NUM_INT if state in (NUM_ZERO, NUM_INT) else NUM_FRAC)
+                )
+                return
+            if char == ".":
+                self.state = NUM_DOT
+                return
+            if char in "eE":
+                self.state = NUM_EXP
+                return
+            if char in "+-":
+                self.state = NUM_EXP_SIGN
+                return
+            # A digit after '-', '.' or an exponent sign.
+            if state == NUM_SIGN:
+                self.state = NUM_INT if char != "0" else NUM_ZERO
+                return
+            if state == NUM_DOT:
+                self.state = NUM_FRAC
+                return
+            self.state = NUM_EXP_DIGITS
+            return
+
+        # The number ends here: resolve it and reprocess the character.
+        if state not in _NUMBER_TERMINAL:
+            self.state = FAILED
+            return
+        self._value_completed()
+        self._advance(char)
 
     def _begin_literal(self, target: str) -> None:
         self.literal_target = target
@@ -507,7 +620,10 @@ def build_logit_mask(
             continue
         if not text:
             continue
-        if unlimited or all(char in allowed for char in text):
+        if unlimited:
+            if not any(char in STRING_FORBIDDEN for char in text):
+                legal.add(token_id)
+        elif all(char in allowed for char in text):
             legal.add(token_id)
 
     if grammar.accept() and eos_id is not None:

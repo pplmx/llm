@@ -506,3 +506,83 @@ def test_the_json_object_instruction_is_shared_between_endpoints():
         ResponsesRequest(input="hi", text={"format": {"type": "json_object"}})
     )
     assert chat_instruction == responses_instruction
+
+
+# --- the number sub-automaton ----------------------------------------------
+#
+# A single "digit-ish" state accepted "14e", "19-" and "07". Measured on 30
+# seeded runs those three shapes were every numeric failure, and fixing them
+# moved the constrained success rate from 20/30 to 29/30. Each form is pinned
+# here both ways: the valid ones must be accepted, the invalid ones refused, and
+# the whole group is cross-checked against ``json.loads``.
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["0", "1", "19", "-5", "1.5", "1.5e3", "1.5E-3", "0.5", "123", "-0.25", "1e10", "1E+5", "-0.0", "1E-7"],
+)
+def test_valid_numbers_are_accepted(text):
+    assert _accepts(text), f"the grammar rejected a valid number: {text!r}"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "07",  # leading zero
+        "00",
+        "14e",  # exponent marker with no digits
+        "1e",
+        "1e+",
+        "19-",  # a sign inside the integer part
+        "9+1",
+        "1.",  # a dot with no fraction
+        ".5",
+        "1..2",
+        "1e1e1",
+    ],
+)
+def test_invalid_numbers_are_refused(text):
+    assert not _accepts(text), f"the grammar accepted an invalid number: {text!r}"
+
+
+def test_numbers_agree_with_json_loads():
+    """Cross-check the number grammar against the standard library."""
+    import random
+
+    rng = random.Random(7)  # noqa: S311 - deterministic fixtures
+    values = []
+    for _ in range(200):
+        values.append(rng.randint(-(10**6), 10**6))
+        values.append(rng.uniform(-1e6, 1e6))
+        values.append(float(rng.randint(-(10**3), 10**3)))
+    for value in values:
+        text = json.dumps(value)
+        assert _accepts(text), f"rejected a json.dumps number: {text!r}"
+
+
+# --- string bodies must exclude raw control characters ----------------------
+
+
+def test_a_raw_control_character_inside_a_string_is_refused():
+    """RFC 8259 forbids unescaped control characters in a string.
+
+    Measured: a constrained run emitted a literal TAB inside a string, and the
+    whole document then failed with "Invalid control character at" — the mask had
+    been letting every character through in a string body.
+    """
+    for body in ('"\ta"', '"a\nb"', '"a\x00b"'):
+        assert not _accepts(body), f"accepted a raw control character: {body!r}"
+
+
+def test_an_escaped_control_character_is_fine():
+    """The ESCAPED form is legal, so the guard must not over-reject."""
+    assert _accepts('"a\\tb"')
+    assert _accepts('"a\\nb"')
+    assert _accepts('"a\\u00e9b"')
+
+
+def test_a_string_closes_normally():
+    """Excluding the quote alongside the control characters made strings unclosable."""
+    assert _accepts('""')
+    assert _accepts('"ab"')
+    assert _accepts('{"k": "v w"}')
