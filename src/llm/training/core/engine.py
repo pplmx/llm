@@ -133,6 +133,14 @@ class TrainingEngine:
         self.training_start_time = time.time()
         self.should_stop_training = False
         self.global_step = 0
+        # Monotonic count of micro-batches PROCESSED, distinct from
+        # ``global_step`` (optimizer steps). With gradient accumulation the two
+        # diverge by the accumulation factor, and keying per-batch telemetry on
+        # ``global_step`` makes several batches share one x value — measured
+        # with accum=2 over 5 batches: (batch_idx, global_step) came out
+        # (0,0) (1,1) (2,1) (3,2) (4,3), i.e. only 4 distinct x values for 5
+        # points, so one Batch/Loss sample silently overwrote another.
+        self.batches_seen = 0
 
     def get_checkpoint_state(self) -> dict[str, Any] | None:
         """Persist the global optimizer-step counter across a resume.
@@ -1047,6 +1055,11 @@ class TrainingEngine:
             # went into ``scaled_loss`` for backprop), so step-end callbacks
             # and epoch aggregation see the true value even under gradient
             # accumulation.
+            #
+            # ``batches_seen`` advances per MICRO-batch, so per-batch telemetry
+            # gets a unique x value even when several batches share one
+            # ``global_step`` under gradient accumulation.
+            self.batches_seen += 1
             self._run_callbacks("on_train_step_end", epoch=epoch, batch_idx=batch_idx, loss=loss, metrics=metrics)
 
             batch_loss = metrics.get("loss", loss.item())  # raw loss from the task

@@ -228,3 +228,73 @@ def test_the_epoch_summary_does_not_print_the_next_epochs_lr(tmp_path):
         "the summary is reading the scheduler one step ahead"
     )
     assert abs(printed[1] - 0.1) < 1e-6, f"epoch 2 should train at the peak 0.1, printed {printed[1]}"
+
+
+# --- per-batch telemetry needs a UNIQUE x value -----------------------------
+#
+# Batch scalars were keyed on ``global_step`` (optimizer steps). Under gradient
+# accumulation one step covers several batches, so those batches share an x
+# value and TensorBoard keeps only the last write. Measured with accum=2 over 5
+# batches: (batch_idx, global_step) = (0,0) (1,1) (2,1) (3,2) (4,3) — 4 distinct
+# x values for 5 points.
+
+
+@pytest.mark.parametrize("accum", [1, 2, 4])
+def test_every_batch_gets_a_distinct_telemetry_x_value(tmp_path, accum):
+    """One micro-batch, one x value — regardless of the accumulation factor."""
+    config = Config(
+        training=TrainingConfig(
+            task="regression",
+            epochs=1,
+            batch_size=2,
+            num_samples=10,
+            lr=1e-3,
+            output_dir=str(tmp_path / "output"),
+        ),
+        model=ModelConfig(hidden_size=16, num_layers=1),
+        optimization=OptimizationConfig(amp_dtype="auto", gradient_accumulation_steps=accum, use_compile=False),
+    )
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    seen: list[int] = []
+    real_run_callbacks = engine._run_callbacks
+
+    def spy(hook: str, **kwargs):
+        if hook == "on_train_step_end":
+            seen.append(engine.batches_seen)
+        return real_run_callbacks(hook, **kwargs)
+
+    engine._run_callbacks = spy  # type: ignore[method-assign]
+    engine._run_epoch(0)
+
+    assert len(seen) == 5, f"expected 5 micro-batches, saw {len(seen)}"
+    assert len(set(seen)) == len(seen), (
+        f"accum={accum}: {len(seen)} batches produced only {len(set(seen))} distinct telemetry "
+        f"x values ({seen}); later points overwrite earlier ones in TensorBoard"
+    )
+    assert seen == sorted(seen), f"telemetry x values must be monotonic, got {seen}"
+
+
+def test_the_batch_counter_is_independent_of_the_optimizer_step_counter(tmp_path):
+    """The two must diverge by the accumulation factor, not track each other."""
+    config = Config(
+        training=TrainingConfig(
+            task="regression", epochs=1, batch_size=2, num_samples=10, lr=1e-3, output_dir=str(tmp_path / "output")
+        ),
+        model=ModelConfig(hidden_size=16, num_layers=1),
+        optimization=OptimizationConfig(amp_dtype="auto", gradient_accumulation_steps=2, use_compile=False),
+    )
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    engine._run_epoch(0)
+
+    assert engine.batches_seen == 5, f"expected 5 micro-batches, got {engine.batches_seen}"
+    assert engine.global_step == 3, f"expected ceil(5/2)=3 optimizer steps, got {engine.global_step}"
+    assert engine.batches_seen != engine.global_step, (
+        "the micro-batch counter and the optimizer-step counter are the same value; "
+        "per-batch telemetry would still collide"
+    )

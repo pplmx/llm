@@ -370,10 +370,17 @@ class TensorBoardLogger(Callback):
         logs: dict[str, Any] | None = None,
     ):
         if self.engine.rank == 0 and self.writer:
-            # Use the engine's own step counter: streaming dataloaders wrap
-            # an ``IterableDataset`` with no ``__len__``, so deriving the
-            # global step from ``len(dataloader)`` crashes on stream_lm.
-            global_step = self.engine.global_step
+            # Use the engine's own counters: streaming dataloaders wrap an
+            # ``IterableDataset`` with no ``__len__``, so deriving the index from
+            # ``len(dataloader)`` crashes on stream_lm.
+            #
+            # The x axis is ``batches_seen`` (micro-batches), NOT
+            # ``global_step`` (optimizer steps). Under gradient accumulation one
+            # optimizer step covers several batches, so the step counter gives
+            # them the SAME x value and TensorBoard keeps only the last write —
+            # measured with accum=2 over 5 batches: 4 distinct x values for 5
+            # points.
+            global_step = getattr(self.engine, "batches_seen", self.engine.global_step)
             self.writer.add_scalar("Batch/Loss", loss.item(), global_step)
             for key, value in metrics.items():
                 if isinstance(value, int | float):
