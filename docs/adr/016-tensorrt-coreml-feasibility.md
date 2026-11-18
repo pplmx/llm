@@ -29,10 +29,20 @@ ROADMAP §14.2「模型导出」有两项未做：
 | `onnxruntime`                                 | 1.31.0 —— providers 仅 **CPU / Azure**，**无 CUDA** |
 | `tensorrt` / `torch_tensorrt` / `coremltools` | 均未安装                                            |
 
-`uv pip install --dry-run tensorrt` 能解析出 `tensorrt==11.5.0.63` +
-`tensorrt-cu13{,-bindings,-libs}`，即存在匹配 cu130 与 Python 3.14 的 wheel。
-实测安装未在合理时间内完成（数 GB 的 CUDA 库下载），因此**本轮没有拿到 TensorRT
-真正运行的结果**——下文凡涉及 TensorRT 运行时行为的判断都标 `[INFERENCE]`。
+**TensorRT 在本机装不上，已确认为硬性阻塞（不是超时）。** 反复尝试后的确切证据：
+
+```text
+tensorrt>=8.5.1.7,<=8.6.0 has no wheels with a matching Python ABI tag (e.g., `cp314`)
+tensorrt>=8.6.1,<=8.6.1.post1 / tensorrt>=10.0.1 have no usable wheels
+```
+
+即 **TensorRT 没有 Python 3.14 的预编译 wheel**。解析阶段看起来"可解析"
+（`uv pip install --dry-run` 会列出 `tensorrt==11.5.0.63` + `tensorrt-cu13-libs`），
+但真正安装时要 `Building tensorrt-cu13-libs==11.5.0.63` —— 从源码构建，而源码构建
+依赖完整的 TensorRT C++ SDK。加上 `--no-build` 立即暴露真相：没有任何可用 wheel。
+
+因此**本轮及以后都不应再尝试在本机安装 TensorRT**；要用它必须换 Python ≤3.13 的环境，
+或使用 NVIDIA NGC 的预装容器。下文凡涉及 TensorRT 运行时行为的判断仍标 `[INFERENCE]`。
 
 ### ONNX 产物质量（实测）
 

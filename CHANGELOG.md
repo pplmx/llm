@@ -89,6 +89,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The two-graph generation export is registered as `onnx-generation`, so it is reachable instead of just importable** (export): `export_decoder_for_generation` landed as a function, but nothing outside its own module could dispatch to it — `EXPORT_REGISTRY` only held `onnx`/`torchscript`/`gguf`, all single-file targets. It now registers under its own name via `build_onnx_generation_exporter`, which returns the written DIRECTORY (the registry contract is `(model, output_path, **kwargs) -> Path`, so the directory path is the Path). Registering separately rather than overloading `onnx` keeps each target's behaviour predictable from its name: `onnx` writes one file and takes `input_shape`/`opset_version`, `onnx-generation` writes a directory and takes `prompt_len`/`max_seq_len`; overloading would make one target's meaning depend on which kwargs happened to be passed. Three tests: the target is registered, dispatch produces both phase graphs, and the caller's directory name is used verbatim rather than treated as a filename (a caller asking for `out/` must not get `out.onnx/prefill.onnx`). Removing the registration turns the first red with `the registry holds ['gguf', 'onnx', 'torchscript']`. The architecture doc's extension-point table now lists the new name in its in-code column.
 
+
+- **TensorRT is confirmed uninstallable here, and the reason is pinned so it is never retried blindly** (docs): an earlier round recorded only that "the multi-GB install did not complete", which reads as a timeout worth retrying. It is not a timeout. With source builds disabled the resolver states it plainly: `tensorrt>=8.5.1.7,<=8.6.0 has no wheels with a matching Python ABI tag (e.g., cp314)` and every other version range "has no usable wheels". `uv pip install --dry-run` looks like it succeeds (it lists `tensorrt==11.5.0.63` + `tensorrt-cu13-libs`) because resolution is not installation — the real install goes `Building tensorrt-cu13-libs==11.5.0.63` from source, which needs the full TensorRT C++ SDK. **TensorRT has no Python 3.14 wheel**, so it cannot be evaluated on this host at all; it needs Python ≤3.13 or NVIDIA's NGC container. ADR-016 and ROADMAP now say this instead of implying a retry would help.
+
+### Added
+
 ### Added
 
 ### Added

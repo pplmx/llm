@@ -530,6 +530,9 @@
       23 个算子全部 TensorRT 原生支持、opset 17、动态轴有效、数值误差 float32 量级。
       - 该冗余问题原文记录为：导出强制 `use_cache=False` 时每个 token 要重算整个
       前缀，实测 10.3× —— 现已修复。
+      - **阻塞**：TensorRT 没有 Python 3.14 的预编译 wheel
+      （`no wheels with a matching Python ABI tag (e.g., cp314)`），本机装不上，
+      需 Python ≤3.13 环境或 NVIDIA NGC 容器才能继续。
 - [ ] 探索 Core ML 支持 (iOS 部署) — 同见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：Core ML 仅支持 CPU / Apple Silicon，本机是 A100，**无法在本机验证任何产物**，只能做静态检查；需 Apple 硬件才能推进。
 
 #### 14.3 应用框架集成
