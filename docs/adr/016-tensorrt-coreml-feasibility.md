@@ -104,6 +104,23 @@ token 要把整个前缀重新跑一遍。以 prompt=8、新增 16 token 为例�
    注意：初版验证脚本曾报 `max|d| = 1.06` 的"不匹配"，原因是我在两段代码里各自
    `manual_seed` 但随机数消耗顺序不同——改用**共享同一组输入张量**后误差降到 1.8e-7。
    记录在此，避免下次把脚本缺陷误判为实现缺陷。
+
+   **进展（第一步已落地一部分）**：`src/llm/core/kv_cache.py` 新增
+   `FunctionalKVCache`——同样的 `update` 接口，但用 `cat` 构造结果而非原地写，因此
+   `mha.py` 一行没改就能用。与 `KVCache` 在真实模型上 **bit-exact 一致**
+   （prompt + 3 个 decode step，四个步骤全部 `0.000e+00`）。
+
+   **仍未打通的部分**（如实记录）：完整「显式 cache I/O 的增量解码导出」还差一步。
+   显式 cache 作为图输入/输出**能 trace**，prefill 数值正确（4.8e-7），但**解码步骤
+   偏差 ~0.34**。根因已定位：`mha.py:345` 的 `is_causal=use_causal if not has_past
+   else False` 由 Python 布尔决定，tracer 把它固化成常量（有 TracerWarning 明示），
+   于是解码时仍沿用 prefill 的因果设置。显然的修法是改传显式 additive mask，实测撞上
+   SDPA 的广播形状错误
+   （`output with shape [1, 2, 4, 4] doesn't match the broadcast shape [4, 2, 4, 4]`），
+   未解决。
+
+   即：cache 的**函数式化**已完成并验证；**因果掩码在导出图中的动态表达**是剩余的
+   阻塞点。
 2. **再谈 TensorRT**。前置条件已具备（算子全覆盖、opset 17、cu130 wheel 存在），
    主要工作量在 engine 构建 / profile 管理（动态 shape 需要 `optimization_profile`）。
 3. **Core ML 单独评估**，且必须在 Apple 硬件上验证；本机做不了。

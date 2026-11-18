@@ -314,3 +314,77 @@ def reset_all_caches(caches: list[KVCache]) -> None:
     """Reset all caches in a list."""
     for cache in caches:
         cache.reset()
+
+
+class FunctionalKVCache(KVCache):
+    """A KV cache whose updated state is RETURNED, never written in place.
+
+    ``KVCache.update`` writes the new keys/values into a pre-allocated buffer and
+    returns a *view* of it. That is ideal for serving — one allocation, no copies —
+    but it makes the operation a side effect, and a side effect cannot be recorded
+    in an ONNX/exported graph. ADR-016 measured the consequence: the export path
+    forces ``use_cache=False``, so every decoded token recomputes the whole prefix
+    (248 positions processed versus 24 with a cache at prompt=8/new=16, a 10.3x
+    gap that grows quadratically).
+
+    This subclass keeps the same interface but builds the result with
+    ``torch.cat``, so the update is a pure function of its inputs. Attention code
+    needs no change: it already calls ``k, v = kv_cache.update(k, v)``.
+
+    Where the in-place cache returns a view over capacity it was allocated with,
+    this one returns exactly the tokens seen so far — no padding, no max_seq_len
+    buffer. That is what makes the tensor shape a function of the INPUT lengths,
+    which is what lets an exporter express the cache as a dynamic graph
+    input/output pair.
+
+    Not for serving. ``forward`` re-copies the whole history on every step
+    (``O(n)`` per token, ``O(n^2)`` per sequence), which is exactly what the
+    pre-allocated buffer exists to avoid. Use it only where the resulting graph
+    must be stateless, i.e. export.
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_seq_len: int,
+        num_kv_heads: int,
+        head_dim: int,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
+        super().__init__(max_batch_size, max_seq_len, num_kv_heads, head_dim, device, dtype)
+        # History is kept as a list of the timesteps seen so far, so `cat` never
+        # has to copy the pre-allocated buffer's unused capacity.
+        self._k_parts: list[Tensor] = []
+        self._v_parts: list[Tensor] = []
+
+    def update(self, k_new: Tensor, v_new: Tensor) -> tuple[Tensor, Tensor]:
+        """Return ``(k_all, v_all)`` for the whole history INCLUDING the new tokens.
+
+        Same contract as :meth:`KVCache.update` (attention reads the result and
+        then compares ``seq_len`` against the query length to decide causality),
+        but built functionally.
+        """
+        new_seq_len = self._seq_len + k_new.size(2)
+        if new_seq_len > self.max_seq_len:
+            raise ValueError(
+                f"Cache overflow: trying to cache {new_seq_len} tokens, but max_seq_len is {self.max_seq_len}"
+            )
+        k_all = torch.cat([*self._k_parts, k_new], dim=2)
+        v_all = torch.cat([*self._v_parts, v_new], dim=2)
+        self._k_parts.append(k_new)
+        self._v_parts.append(v_new)
+        self._seq_len = new_seq_len
+        # No batch trim is needed here, unlike ``KVCache.update``: that one writes
+        # into a buffer sized ``max_batch_size`` and must slice the unused rows
+        # away, whereas ``cat`` over the parts yields exactly the rows that were
+        # fed. A trim was added defensively and then removed after a mutation test
+        # showed it changed nothing at any batch size the model can produce —
+        # keeping it would suggest a guaranteed behaviour that does not exist.
+        return k_all, v_all
+
+    def reset(self) -> None:
+        """Drop all cached history."""
+        self._k_parts.clear()
+        self._v_parts.clear()
+        self._seq_len = 0
