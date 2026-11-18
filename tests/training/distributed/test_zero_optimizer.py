@@ -1001,3 +1001,72 @@ def test_a_pre_stage_marker_checkpoint_still_loads_as_stage1() -> None:
     )
     fresh.load_state_dict(legacy)  # must not raise
     assert fresh.optimizer.state, "the restored shard should carry the moments"
+
+
+# --- constructor guards ----------------------------------------------------
+#
+# Each of these is a ValueError the class raises to stop a misconfiguration that
+# would otherwise fail later, inside a collective, with a message that names
+# neither the field nor the cause. They had zero coverage: every existing test
+# constructs a valid optimizer, so a regression that removed a guard would not
+# have failed anything.
+
+
+@pytest.mark.quick
+def test_zero_rejects_a_non_positive_world_size() -> None:
+    """``world_size < 1`` would make the round-robin owner mapping meaningless.
+
+    ``_owner_of`` computes ``index % world_size``, so a zero world size is a
+    ZeroDivisionError at construction time; a negative one silently produces
+    negative owners and an empty ``owned`` list on every rank.
+    """
+    model = _build_model()
+    with pytest.raises(ValueError, match="world_size must be >= 1"):
+        ZeroOptimizer(lambda owned: torch.optim.SGD(owned, lr=0.1), model.parameters(), rank=0, world_size=0)
+
+
+@pytest.mark.quick
+@pytest.mark.parametrize("rank", [-1, 2, 5])
+def test_zero_rejects_a_rank_outside_the_world(rank: int) -> None:
+    """A rank outside ``[0, world_size)`` never matches any owner.
+
+    That leaves the rank with no parameters to optimise — it participates in the
+    collectives but updates nothing, which looks like a slow learner rather than
+    a misconfiguration.
+    """
+    model = _build_model()
+    with pytest.raises(ValueError, match=rf"rank {rank} out of range for world_size 2"):
+        ZeroOptimizer(lambda owned: torch.optim.SGD(owned, lr=0.1), model.parameters(), rank=rank, world_size=2)
+
+
+@pytest.mark.quick
+def test_zero_rejects_a_rank_that_owns_no_parameters() -> None:
+    """More ranks than parameters leaves the tail ranks with an empty shard.
+
+    ``_build_model`` has 4 parameter tensors, so world_size=5 gives rank 4
+    nothing. An optimizer over an empty parameter list cannot step, and the
+    all-gather would still expect its contribution.
+    """
+    model = _build_model()
+    total = len(list(model.parameters()))
+    with pytest.raises(ValueError, match="owns no parameters"):
+        ZeroOptimizer(
+            lambda owned: torch.optim.SGD(owned, lr=0.1),
+            model.parameters(),
+            rank=total,  # the first rank past the last parameter
+            world_size=total + 1,
+        )
+
+
+@pytest.mark.quick
+def test_zero_stage2_inherits_the_same_constructor_guards() -> None:
+    """Stage-2 subclasses Stage-1, so it must refuse the same bad configurations.
+
+    Worth pinning separately: a future refactor that stops calling ``super()``
+    would leave Stage-2 accepting what Stage-1 rejects.
+    """
+    model = _build_model()
+    with pytest.raises(ValueError, match="world_size must be >= 1"):
+        ZeroStage2Optimizer(lambda owned: torch.optim.SGD(owned, lr=0.1), model.parameters(), rank=0, world_size=0)
+    with pytest.raises(ValueError, match="out of range for world_size 2"):
+        ZeroStage2Optimizer(lambda owned: torch.optim.SGD(owned, lr=0.1), model.parameters(), rank=5, world_size=2)

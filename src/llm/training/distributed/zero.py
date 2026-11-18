@@ -360,9 +360,11 @@ class ZeroStage2Optimizer(ZeroOptimizer):
         granularity than round-robin.
         """
         if self._world_size <= 1:
-            for index, owner in enumerate(self._owners):
-                if owner != self._rank:
-                    self._params[index].grad = None
+            # Nothing to reduce and nothing to drop: with one rank every owner IS
+            # this rank, so the loop this replaced could never clear a gradient.
+            # (Verified: owners = [0, 0, ...] at world_size=1, so every
+            # ``owner != self._rank`` test is False.) Returning early keeps the
+            # single-rank path honest about being a no-op.
             return
 
         for index, param in enumerate(self._params):
