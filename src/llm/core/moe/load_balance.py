@@ -40,7 +40,22 @@ __all__ = ["load_balancing_loss", "mean_dispatch_probability", "routing_fraction
 
 
 def routing_fractions(gate_logits: Tensor, num_experts: int) -> Tensor:
-    """Fraction of tokens routed (top-1) to each expert. ``f``: ``[E]``, sums to 1."""
+    """Fraction of tokens routed (top-1) to each expert. ``f``: ``[E]``, sums to 1.
+
+    ``num_experts`` is checked against the logits width, exactly as
+    :func:`mean_dispatch_probability` does. Without the check the two ways of
+    disagreeing both produce a WRONG vector rather than an error:
+    ``num_experts`` larger than the logits width appends phantom experts
+    (measured: 4-wide logits with ``num_experts=6`` returned 6 entries summing to
+    1, so two of them describe experts that do not exist), and smaller lets
+    ``bincount`` keep every id it saw (``num_experts=2`` against 4-wide logits
+    returned four entries summing to 0.75). ``load_balancing_loss`` reached the
+    guard through ``mean_dispatch_probability``, so this only affects a direct
+    call — but a caller pairing ``routing_fractions`` with its own probability
+    term would silently mis-scale the aux loss.
+    """
+    if gate_logits.shape[1] != num_experts:
+        raise ValueError(f"gate_logits experts ({gate_logits.shape[1]}) != num_experts ({num_experts})")
     prob = torch.softmax(gate_logits, dim=-1)
     idx = prob.argmax(dim=-1)  # [T]
     counts = torch.bincount(idx, minlength=num_experts).to(gate_logits.dtype)

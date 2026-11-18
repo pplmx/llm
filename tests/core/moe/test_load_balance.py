@@ -89,3 +89,56 @@ def test_total_collapse_hits_the_maximum():
         assert value == pytest.approx(float(num_experts), rel=1e-4), (
             f"{num_experts} experts: full collapse gave {value}, expected {num_experts}"
         )
+
+
+# --- routing_fractions must validate num_experts -----------------------------
+#
+# `mean_dispatch_probability` checked the width; `routing_fractions` did not.
+# Both ways of disagreeing produced a WRONG vector rather than an error, and a
+# caller pairing `routing_fractions` with its own probability term would then
+# silently mis-scale the auxiliary loss instead of crashing.
+
+
+@pytest.mark.parametrize("num_experts", [2, 6])
+def test_routing_fractions_rejects_a_width_mismatch(num_experts):
+    """Neither a phantom expert nor a dropped one may be reported silently.
+
+    Measured before the guard: 4-wide logits with ``num_experts=6`` returned SIX
+    entries summing to 1 (two describing experts that do not exist), and with
+    ``num_experts=2`` returned FOUR entries summing to 0.75.
+    """
+    import torch
+
+    from llm.core.moe.load_balance import routing_fractions
+
+    gate_logits = torch.randn(8, 4)
+    with pytest.raises(ValueError, match="num_experts"):
+        routing_fractions(gate_logits, num_experts)
+
+
+def test_routing_fractions_still_accepts_a_matching_width():
+    """The guard must not reject the valid case, which is the only one used."""
+    import torch
+
+    from llm.core.moe.load_balance import routing_fractions
+
+    gate_logits = torch.eye(4) * 10.0
+    fracs = routing_fractions(gate_logits, 4)
+
+    assert len(fracs) == 4
+    assert abs(float(fracs.sum()) - 1.0) < 1e-6
+    assert torch.equal(fracs, torch.full((4,), 0.25))
+
+
+def test_the_balanced_case_hits_the_theoretical_minimum():
+    """``E * sum(f_i P_i)`` is 1.0 only for perfectly uniform routing.
+
+    This is the SWITCH/ST-MoE identity the loss is built on, pinned against the
+    measured value so a change to either term shows up here.
+    """
+    import torch
+
+    from llm.core.moe.load_balance import load_balancing_loss
+
+    loss = load_balancing_loss(torch.eye(4) * 10.0, 4)
+    assert abs(float(loss) - 1.0) < 0.02, f"perfectly balanced routing gave {float(loss):.6f}, not ~1.0"
