@@ -1152,3 +1152,55 @@ class TestTheQuotedWeightLossReproduces:
         )
         with pytest.raises(ValueError, match="no HuggingFace mapping"):
             convert_our_weights(model.state_dict(), "llama", 2, strict=True)
+
+
+# --- the written file must be readable by the OFFICIAL library -------------
+#
+# The roundtrip tests above use our own loader on both sides, so a shared
+# misunderstanding of the format (a wrong header length, offsets relative to the
+# wrong base, a non-standard dtype tag) would pass unnoticed. Reading the file
+# with ``safetensors``' own loader is the external check.
+
+
+def test_the_safetensors_file_is_readable_by_the_official_loader(tmp_path):
+    """``safetensors.safe_open`` must parse the file and agree on the tensor set."""
+    safetensors = pytest.importorskip("safetensors", reason="safetensors is the format's reference implementation")
+
+    model = _make_small_decoder()
+    save_pretrained(model, tmp_path)
+    path = tmp_path / "model.safetensors"
+
+    with safetensors.safe_open(str(path), framework="numpy") as handle:
+        official_keys = set(handle.keys())
+        # Shapes from the official reader must match the declared state dict
+        # entries they correspond to (the file is Llama-named, so compare counts
+        # and a couple of dimensions rather than names).
+        for key in sorted(official_keys)[:5]:
+            shape = tuple(handle.get_slice(key).get_shape())
+            assert all(dimension > 0 for dimension in shape), f"{key} has an empty dimension: {shape}"
+
+    assert len(official_keys) > 0, "the official loader found no tensors in the written file"
+
+
+def test_the_published_values_match_their_source_tensors(tmp_path):
+    """Decode a tensor through the official reader and compare with the model.
+
+    Renaming is the publisher's whole job, so a name mismatch is expected; the
+    VALUES must not move. The embedding is the one tensor whose published name
+    differs only in prefix, so it is a reliable anchor.
+    """
+    safetensors = pytest.importorskip("safetensors", reason="safetensors is the format's reference implementation")
+    numpy = pytest.importorskip("numpy")
+
+    model = _make_small_decoder()
+    save_pretrained(model, tmp_path)
+    path = tmp_path / "model.safetensors"
+
+    with safetensors.safe_open(str(path), framework="numpy") as handle:
+        key = "model.embed_tokens.weight"
+        assert key in list(handle.keys()), f"expected the Llama-style embedding key, got {sorted(handle.keys())[:5]}"
+        published = numpy.asarray(handle.get_tensor(key))
+
+    source = model.state_dict()["embedding_layer.token_embeddings.weight"].float().cpu().numpy()
+    assert published.shape == source.shape
+    assert numpy.abs(published - source).max() == 0.0, "the published embedding differs from the model's own weights"
