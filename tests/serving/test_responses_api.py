@@ -333,3 +333,113 @@ def test_the_shared_validator_defaults_to_generate_endpoints_field_name():
 
     parameters = inspect.signature(_validate_generation_bounds).parameters
     assert parameters["budget_field"].default == "max_new_tokens"
+
+
+def _sse_frames(response) -> list[dict]:
+    """Parse the JSON frames of an SSE response, skipping the ``[DONE]`` sentinel.
+
+    ``[DONE]`` is a bare marker, not a JSON object, so a naive parse of every
+    ``data:`` line raises. The Responses API streams do not need this because
+    their terminal event is a real JSON object.
+    """
+    frames = []
+    for line in response.iter_lines():
+        if not line.startswith("data: "):
+            continue
+        payload = line[len("data: ") :]
+        if payload == "[DONE]":
+            continue
+        frames.append(json.loads(payload))
+    return frames
+
+
+# --- stream_options.include_usage ------------------------------------------
+#
+# ``stream_options`` used to be on the unsupported-knob list. The one option in
+# it that callers actually use — ``include_usage`` — is now honoured, in OpenAI's
+# exact shape: an EXTRA trailing chunk with an empty ``choices`` list carrying the
+# totals, after the finish_reason chunk and before ``[DONE]``. The official SDK's
+# stream accumulator keys on that shape to populate ``stream.usage``.
+
+
+def test_the_client_can_probe_the_parsed_stream_options_shape():
+    """``stream_options`` must parse into a model, not stay an opaque dict."""
+    from llm.serving.schemas import ChatCompletionStreamOptions
+
+    options = ChatCompletionStreamOptions(include_usage=True)
+    assert options.include_usage is True
+    assert ChatCompletionStreamOptions().include_usage is False
+
+
+def test_stream_options_is_no_longer_refused_as_unsupported():
+    """Both OpenAI-shaped request models must accept ``include_usage``."""
+    from llm.serving.schemas import ChatCompletionRequest, CompletionRequest
+
+    chat = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], stream_options={"include_usage": True})
+    assert chat.stream_options.include_usage is True
+
+    legacy = CompletionRequest(prompt="hi", stream_options={"include_usage": True})
+    assert legacy.stream_options.include_usage is True
+
+
+@pytest.mark.slow
+def test_streaming_emits_a_usage_chunk_when_asked(client):
+    """The trailing usage chunk must exist, be last but one, and carry totals."""
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": "tiny",
+            "messages": [{"role": "user", "content": "abc"}],
+            "max_tokens": 3,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    ) as response:
+        assert response.status_code == 200
+        frames = _sse_frames(response)
+
+    usage_frames = [f for f in frames if f.get("usage") is not None]
+    assert len(usage_frames) == 1, f"expected exactly one usage chunk, got {len(usage_frames)}"
+
+    usage_frame = usage_frames[0]
+    # OpenAI's contract: the usage chunk has an EMPTY choices list.
+    assert usage_frame["choices"] == [], "the usage chunk must carry no choices"
+    usage = usage_frame["usage"]
+    assert usage["total_tokens"] == usage["prompt_tokens"] + usage["completion_tokens"]
+    assert usage["completion_tokens"] > 0
+
+    # And it must be the LAST chunk before [DONE].
+    assert frames[-1] is usage_frame, "the usage chunk must come after finish_reason and before [DONE]"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"stream_options": {"include_usage": False}},
+        {},  # no stream_options at all
+    ],
+)
+def test_no_usage_chunk_unless_requested(client, body):
+    """A client that did not ask must not receive a usage chunk.
+
+    Emitting one unconditionally would break clients that assume every chunk has
+    a choice, which is what the OpenAI SDK's accumulator does by default.
+    """
+    with client.stream(
+        "POST",
+        "/v1/chat/completions",
+        json={
+            "model": "tiny",
+            "messages": [{"role": "user", "content": "abc"}],
+            "max_tokens": 3,
+            "stream": True,
+            **body,
+        },
+    ) as response:
+        assert response.status_code == 200
+        frames = _sse_frames(response)
+
+    assert not [f for f in frames if f.get("usage") is not None], "an unrequested usage chunk was sent"
+    assert all(f["choices"] for f in frames), "every chunk should carry a choice when usage is not requested"

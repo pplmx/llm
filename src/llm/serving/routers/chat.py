@@ -350,6 +350,26 @@ async def _chat_stream_generator(
                 choices=[ChatCompletionChunkChoice(delta=ChatCompletionChunkDelta(), finish_reason=finish_reason)],
             )
             yield f"data: {final_chunk.model_dump_json()}\n\n"
+
+            # ``stream_options.include_usage``: one extra chunk with an EMPTY
+            # ``choices`` list carrying the totals, after the finish_reason chunk
+            # and before ``[DONE]`` — that ordering is OpenAI's contract, and the
+            # official SDK's stream accumulator looks for exactly this shape to
+            # populate ``stream.usage``.
+            if request.stream_options is not None and request.stream_options.include_usage:
+                usage_chunk = ChatCompletionChunk(
+                    id=completion_id,
+                    created=created,
+                    model=request.model,
+                    choices=[],
+                    usage=ChatCompletionUsage(
+                        prompt_tokens=_token_count(prompt),
+                        completion_tokens=token_count,
+                        total_tokens=_token_count(prompt) + token_count,
+                    ),
+                )
+                yield f"data: {usage_chunk.model_dump_json()}\n\n"
+
             yield "data: [DONE]\n\n"
             t.set_status(200)
             metrics.observe_tokens(endpoint="chat_completions", token_count=token_count)

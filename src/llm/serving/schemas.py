@@ -223,6 +223,20 @@ class ChatMessage(BaseModel):
     )
 
 
+class ChatCompletionStreamOptions(BaseModel):
+    """``stream_options`` — which extras to include on a streamed response."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    include_usage: bool = Field(
+        False,
+        description=(
+            "When true, an extra chunk carrying token usage follows the chunk with "
+            "finish_reason; its choices list is empty and it precedes [DONE]."
+        ),
+    )
+
+
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request."""
 
@@ -297,7 +311,9 @@ class ChatCompletionRequest(BaseModel):
     n: int | None = Field(None, description="UNSUPPORTED: multiple completions per request.")
     seed: int | None = Field(None, description="UNSUPPORTED: sampling reproducibility.")
     response_format: dict[str, Any] | None = Field(None, description="UNSUPPORTED: structured output.")
-    stream_options: dict[str, Any] | None = Field(None, description="UNSUPPORTED: stream usage reporting.")
+    stream_options: ChatCompletionStreamOptions | None = Field(
+        None, description="Which extras to include on a streamed response."
+    )
     tools: list[Any] | None = Field(None, description="UNSUPPORTED: tool/function calling.")
 
     @model_validator(mode="after")
@@ -324,7 +340,6 @@ class ChatCompletionRequest(BaseModel):
             "n": self.n,
             "seed": self.seed,
             "response_format": self.response_format,
-            "stream_options": self.stream_options,
             "tools": self.tools,
         }
         requested = [name for name, value in unsupported.items() if value is not None and value != 1]
@@ -388,7 +403,9 @@ class CompletionRequest(BaseModel):
     # client asked for.
     n: int | None = Field(None, description="UNSUPPORTED: multiple completions per request.")
     seed: int | None = Field(None, description="UNSUPPORTED: sampling reproducibility.")
-    stream_options: dict[str, Any] | None = Field(None, description="UNSUPPORTED: stream usage reporting.")
+    stream_options: ChatCompletionStreamOptions | None = Field(
+        None, description="Which extras to include on a streamed response."
+    )
 
     @field_validator("prompt")
     @classmethod
@@ -423,7 +440,6 @@ class CompletionRequest(BaseModel):
         unsupported = {
             "n": self.n,
             "seed": self.seed,
-            "stream_options": self.stream_options,
         }
         requested = [name for name, value in unsupported.items() if value is not None and value != 1]
         if requested:
@@ -481,14 +497,9 @@ class CompletionChunk(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str = "llm"
     choices: list[CompletionChunkChoice] = Field(..., description="Chunk choices.")
-
-
-class ChatCompletionUsage(BaseModel):
-    """Token usage statistics."""
-
-    prompt_tokens: int = Field(..., description="Number of tokens in the prompt.")
-    completion_tokens: int = Field(..., description="Number of tokens in the completion.")
-    total_tokens: int = Field(..., description="Total tokens used.")
+    usage: ChatCompletionUsage | None = Field(
+        None, description="Token usage; present on the final chunk only when requested."
+    )
 
 
 class ChatCompletionChoiceMessage(BaseModel):
@@ -532,6 +543,14 @@ class ChatCompletionChunkChoice(BaseModel):
     finish_reason: Literal["stop", "length"] | None = None
 
 
+class ChatCompletionUsage(BaseModel):
+    """Token usage statistics."""
+
+    prompt_tokens: int = Field(..., description="Number of tokens in the prompt.")
+    completion_tokens: int = Field(..., description="Number of tokens in the completion.")
+    total_tokens: int = Field(..., description="Total tokens used.")
+
+
 class ChatCompletionChunk(BaseModel):
     """OpenAI-compatible streaming chunk."""
 
@@ -540,6 +559,13 @@ class ChatCompletionChunk(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str = "llm"
     choices: list[ChatCompletionChunkChoice] = Field(..., description="List of chunk choices.")
+    # Populated ONLY on the extra trailing chunk emitted when the request set
+    # ``stream_options.include_usage``. OpenAI's contract: that chunk carries an
+    # EMPTY ``choices`` list and the totals, and it arrives after the chunk with
+    # ``finish_reason`` and before ``[DONE]``.
+    usage: ChatCompletionUsage | None = Field(
+        None, description="Token usage; present on the final chunk only when requested."
+    )
 
 
 # --- OpenAI Responses API (``POST /v1/responses``) -------------------------

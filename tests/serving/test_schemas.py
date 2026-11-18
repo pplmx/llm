@@ -143,10 +143,13 @@ class TestUnsupportedChatKnobs:
     """A compatibility surface must not accept a parameter and ignore it.
 
     With pydantic's default ``extra="ignore"``, a client sending ``n=3`` or
-    ``stream_options={"include_usage": true}`` got a 200 whose behaviour differed
-    from the request: one completion instead of three, no usage in the stream.
-    The client had no way to notice. These knobs are now declared and rejected
-    with a message naming the field.
+    ``seed=42`` got a 200 whose behaviour differed from the request: one
+    completion instead of three, no seeding. The client had no way to notice.
+    These knobs are now declared and rejected with a message naming the field.
+
+    ``stream_options`` USED to be on this list; ``include_usage`` is honoured now
+    (see ``test_responses_api.py``), so it moved out of the unsupported set while
+    the rest stayed.
     """
 
     @pytest.mark.parametrize(
@@ -155,7 +158,6 @@ class TestUnsupportedChatKnobs:
             ("n", 3),
             ("seed", 42),
             ("response_format", {"type": "json_object"}),
-            ("stream_options", {"include_usage": True}),
             ("tools", [{"type": "function"}]),
         ],
     )

@@ -61,6 +61,7 @@ from llm.serving.routers.generate import (
 )
 from llm.serving.scheduler import QueueFullError
 from llm.serving.schemas import (
+    ChatCompletionUsage,
     CompletionChoice,
     CompletionChunk,
     CompletionChunkChoice,
@@ -307,6 +308,24 @@ async def _completion_stream_generator(
                 request.model,
                 CompletionChunkChoice(finish_reason=finish_reason),
             )
+
+            # ``stream_options.include_usage``: a final chunk with EMPTY choices
+            # carrying the totals, after finish_reason and before ``[DONE]``.
+            if request.stream_options is not None and request.stream_options.include_usage:
+                prompt_tokens = _token_count(prompt)
+                usage_chunk = CompletionChunk(
+                    id=completion_id,
+                    created=created,
+                    model=request.model,
+                    choices=[],
+                    usage=ChatCompletionUsage(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=token_count,
+                        total_tokens=prompt_tokens + token_count,
+                    ),
+                )
+                yield f"data: {json.dumps(usage_chunk.model_dump(mode='json'))}\n\n"
+
             yield "data: [DONE]\n\n"
             t.set_status(200)
             metrics.observe_tokens(endpoint="completions", token_count=token_count)

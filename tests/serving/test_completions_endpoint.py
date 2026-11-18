@@ -191,7 +191,7 @@ def test_completion_stream_rejects_list_prompts(client):
 # --- Unsupported OpenAI knobs ----------------------------------------------
 
 
-@pytest.mark.parametrize(("field", "value"), [("n", 3), ("seed", 42), ("stream_options", {"include_usage": True})])
+@pytest.mark.parametrize(("field", "value"), [("n", 3), ("seed", 42)])
 def test_unsupported_completion_knobs_are_refused(client, field, value):
     """Declared-but-unsupported knobs must 422, not be silently dropped.
 
