@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from llm.serving.batch_engine import ContinuousBatchingEngine, SlotAllocator
+from llm.serving.batch_engine import ContinuousBatchingEngine, NoFreeSlotsError, SlotAllocator
 from llm.serving.schemas import GenerationRequest, RequestState
 
 
@@ -2029,3 +2029,95 @@ def test_no_exit_path_leaks_a_kv_slot(exit_path, tiny_model, device, mock_tokeni
         f"leaked after 5 requests (free: {engine.slot_allocator.num_free})"
     )
     assert not engine.scheduler.running, f"{exit_path}: sequences left in the running set: {engine.scheduler.running}"
+
+
+# --- backpressure: the allocator's failure path ---------------------------
+#
+# ``NoFreeSlotsError`` is the typed backpressure signal the routers turn into a
+# retryable 503. The round-trip test above only exercises the happy path, so
+# nothing pinned the behaviour a saturated server actually depends on: refusing
+# admission instead of over-allocating, and returning every slot on release.
+
+
+def test_allocate_refuses_at_capacity_instead_of_over_allocating():
+    """A full allocator raises the typed error; it must never hand out a slot twice."""
+    allocator = SlotAllocator(total_slots=2)
+    first = allocator.allocate("r1")
+    second = allocator.allocate("r2")
+
+    assert {first, second} == {0, 1}, "the two live requests must hold distinct slots"
+    assert allocator.num_free == 0
+
+    with pytest.raises(NoFreeSlotsError):
+        allocator.allocate("r3")
+
+    # The refusal must not have mutated anything.
+    assert allocator.num_free == 0
+    assert allocator.get_slot("r3") == -1
+
+
+def test_freeing_every_request_restores_the_full_capacity():
+    """Capacity is recovered exactly, with no slot stranded."""
+    allocator = SlotAllocator(total_slots=3)
+    slots = [allocator.allocate(f"r{index}") for index in range(3)]
+    assert sorted(slots) == [0, 1, 2]
+
+    for index in range(3):
+        allocator.free(f"r{index}")
+
+    assert allocator.num_free == 3
+    assert sorted(allocator.free_slots) == [0, 1, 2]
+
+    # And the allocator is usable again at full capacity.
+    for index in range(3):
+        allocator.allocate(f"again{index}")
+    assert allocator.num_free == 0
+
+
+def test_freeing_twice_keeps_the_accounting_consistent():
+    """A second ``free`` must leave the allocator self-consistent.
+
+    Slot release has several paths (normal finish, stop sequence, abandoned
+    generator, forward failure), so one of them can free a request another
+    already freed. The observable guarantee is that the accounting stays sound:
+    a slot is never simultaneously held and free, and held + free always equals
+    the capacity.
+
+    Note on mutation strength: this cannot distinguish every wrong ``free``. A
+    version that re-adds the already-free slot is behaviourally identical,
+    because the freed slot is in the set either way — there is no observable
+    difference to test. What it does catch is any drift in the accounting
+    invariants below, which is the property callers depend on.
+    """
+    allocator = SlotAllocator(total_slots=2)
+    allocator.allocate("r1")
+    allocator.allocate("r2")
+    allocator.free("r1")
+
+    allocator.free("r1")  # no-op
+
+    assert allocator.num_free == 1, "the repeated free must not free a second slot"
+    assert allocator.get_slot("r1") == -1
+    assert allocator.get_slot("r2") != -1, "r2 must still hold its slot"
+
+    held = set(allocator.seq_to_slot.values())
+    assert held.isdisjoint(allocator.free_slots), (
+        f"slots {sorted(held)} are both held and free ({sorted(allocator.free_slots)})"
+    )
+    assert len(held) + allocator.num_free == allocator.total_slots
+
+    allocator.allocate("r3")
+    held = set(allocator.seq_to_slot.values())
+    assert held.isdisjoint(allocator.free_slots)
+    assert len(held) + allocator.num_free == allocator.total_slots
+
+
+def test_allocating_the_same_request_twice_returns_the_same_slot():
+    """``allocate`` is keyed by request id, so a retry cannot consume two slots."""
+    allocator = SlotAllocator(total_slots=2)
+
+    first = allocator.allocate("same")
+    again = allocator.allocate("same")
+
+    assert first == again
+    assert allocator.num_free == 1, "the duplicate allocate must not take a second slot"
