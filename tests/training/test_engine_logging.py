@@ -378,3 +378,126 @@ def test_the_batch_log_says_na_when_this_batch_measured_no_gradient(tmp_path, ca
         "5 batches at accum=2 have 3 step boundaries"
     )
     assert "0.00" not in values, f"a placeholder zero was printed as a gradient norm: {values}"
+
+
+# --- B-Time must be THIS batch's duration, not a running average -----------
+#
+# It was read from ``get_avg_batch_time()`` — a mean over the whole epoch — under
+# a label that reads as a per-batch figure. Measured over 5 batches whose real
+# durations were 319.1 / 2.6 / 1.5 / 1.5 / 1.5 ms, the log printed
+# 319.1 / 160.9 / 107.7 / 81.2 / 65.2 ms: a steadily "improving" curve that was
+# really one warm-up batch being averaged away.
+
+
+def _capture_engine_log(engine) -> str:
+    """Capture the engine logger's own output.
+
+    ``caplog`` only sees records that propagate to the root logger; the engine
+    configures its own logger with ``propagate=False``, so its INFO lines never
+    reach caplog. Attaching a handler directly is what actually captures them.
+    """
+    import io
+    import logging
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    engine.logger.addHandler(handler)
+    return stream
+
+
+def _time_config(tmp_path) -> Config:
+    return Config(
+        training=TrainingConfig(
+            task="regression", epochs=1, batch_size=2, num_samples=10, lr=1e-3, output_dir=str(tmp_path / "output")
+        ),
+        model=ModelConfig(hidden_size=16, num_layers=1),
+        optimization=OptimizationConfig(amp_dtype="auto", use_compile=False),
+        logging=LoggingConfig(log_interval=1),
+    )
+
+
+def test_b_time_reports_the_current_batch_not_the_running_mean(tmp_path):
+    """Each batch's printed time must match that batch's own duration."""
+    config = _time_config(tmp_path)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    stream = _capture_engine_log(engine)
+    try:
+        engine._run_epoch(0)
+    finally:
+        engine.logger.removeHandler(stream)
+
+    printed = [
+        float(line.split("B-Time: ")[1].split("ms")[0])
+        for line in stream.getvalue().splitlines()
+        if "B-Time:" in line and "n/a" not in line
+    ]
+    measured = [round(value * 1000, 1) for value in engine.performance_monitor.batch_times]
+
+    assert len(printed) == len(measured) == 5, (
+        f"expected 5 timed batches, got {len(printed)} printed / {len(measured)} measured"
+    )
+    # Tolerance, not equality: the log line re-reads the clock a few instructions
+    # after the duration was recorded, which shows up as a ~0.1 ms difference on
+    # short batches. A running MEAN would be off by whole milliseconds on the
+    # tail (measured: 160.9 / 107.7 / 81.2 / 65.2 for real 2.6 / 1.5 / 1.5 / 1.5).
+    for printed_value, measured_value in zip(printed, measured, strict=True):
+        assert abs(printed_value - measured_value) < 1.0, (
+            f"the log printed {printed} but the batch durations were {measured}; "
+            "B-Time is showing a running average rather than the current batch"
+        )
+
+
+def test_b_time_tracks_the_current_batch_instead_of_decaying(tmp_path):
+    """A running mean decays monotonically; per-batch timings do not.
+
+    Measured before the fix, over real times of 319.1 / 2.6 / 1.5 / 1.5 / 1.5 ms,
+    the log printed 319.1 / 160.9 / 107.7 / 81.2 / 65.2 ms — every step smaller.
+    """
+    config = _time_config(tmp_path)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    stream = _capture_engine_log(engine)
+    try:
+        engine._run_epoch(0)
+    finally:
+        engine.logger.removeHandler(stream)
+
+    printed = [
+        float(line.split("B-Time: ")[1].split("ms")[0])
+        for line in stream.getvalue().splitlines()
+        if "B-Time:" in line and "n/a" not in line
+    ]
+    assert len(printed) == 5, f"expected 5 timed batches, got {printed}"
+    tail = printed[1:]
+    # Steady-state batches do equal work, so their timings cluster; a running
+    # mean instead shrinks on every step.
+    assert max(tail) - min(tail) < 0.5 * max(tail), (
+        f"the B-Time tail ({tail}) is not clustered around a constant, which is the "
+        "signature of a running mean rather than per-batch measurements"
+    )
+
+
+def test_the_validation_log_does_not_report_a_training_average(tmp_path):
+    """Validation never times its batches, so it must print n/a, not the training mean."""
+    config = _time_config(tmp_path)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    engine._run_epoch(0)
+    stream = _capture_engine_log(engine)
+    try:
+        engine._run_validation_epoch(0)
+    finally:
+        engine.logger.removeHandler(stream)
+
+    lines = [line for line in stream.getvalue().splitlines() if "B-Time:" in line]
+    assert lines, "the validation loop printed no batch stats"
+    assert all("B-Time: n/a" in line for line in lines), (
+        f"validation printed a training-phase B-Time: {[line.split('B-Time: ')[1].split(' |')[0] for line in lines]}"
+    )

@@ -1079,7 +1079,14 @@ class TrainingEngine:
                 self.performance_monitor.log_gradient_norm(grad_norm.item())
 
             if (batch_idx + 1) % self.config.logging.log_interval == 0 and self.rank == 0:
-                self._log_batch_stats(epoch, batch_idx, num_batches, metrics, grad_norm=grad_norm)
+                self._log_batch_stats(
+                    epoch,
+                    batch_idx,
+                    num_batches,
+                    metrics,
+                    grad_norm=grad_norm,
+                    batch_time=time.time() - batch_start_time,
+                )
             self._run_callbacks("on_batch_end", epoch=epoch, batch_idx=batch_idx)
 
         # an empty training epoch must never silently return
@@ -1165,7 +1172,7 @@ class TrainingEngine:
 
         return global_avg_loss
 
-    def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics, *, grad_norm=None):
+    def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics, *, grad_norm=None, batch_time=None):
         if self.optimizer is None:
             raise RuntimeError("standard-loop components are required")
         lr = self.optimizer.param_groups[0]["lr"]
@@ -1177,15 +1184,26 @@ class TrainingEngine:
         # the placeholder was removed, the PREVIOUS step's norm, which read as if
         # the current batch had measured it. ``n/a`` is the honest answer when
         # this batch took no optimizer step.
-        batch_time = self.performance_monitor.get_avg_batch_time()
+        # ``batch_time`` is THIS batch's duration. It used to come from
+        # ``get_avg_batch_time()``, a running mean over the whole epoch, under a
+        # label that reads as a per-batch figure: measured over 5 batches whose
+        # real times were 319.1 / 2.6 / 1.5 / 1.5 / 1.5 ms, the log printed
+        # 319.1 / 160.9 / 107.7 / 81.2 / 65.2 ms — a steadily "improving" curve
+        # that was really the warm-up batch being averaged away.
+        #
+        # ``None`` when the caller did not measure one (the validation loop
+        # reuses this helper but never timed its batches), which then prints
+        # n/a instead of a training-phase average masquerading as a validation
+        # timing.
 
         metrics_str = " | ".join([f"{k}: {v:.4f}" for k, v in metrics.items()])
 
         grad_norm_str = "n/a" if grad_norm is None else f"{grad_norm:.2f}"
+        batch_time_str = "n/a" if batch_time is None else f"{batch_time * 1000:.1f}ms"
         log_msg = (
             f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | "
             f"{metrics_str} | Grad Norm: {grad_norm_str} | "
-            f"LR: {lr:.6f} | B-Time: {batch_time * 1000:.1f}ms | "
+            f"LR: {lr:.6f} | B-Time: {batch_time_str} | "
             f"Mem: {mem_alloc:.2f}/{mem_cached:.2f} GB"
         )
         self.logger.info(log_msg)
