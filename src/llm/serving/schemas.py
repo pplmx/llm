@@ -243,7 +243,26 @@ class ChatCompletionRequest(BaseModel):
         max_length=MAX_MESSAGES,
         description=f"List of messages (1..{MAX_MESSAGES}).",
     )
-    max_tokens: int = Field(50, ge=1, le=4096, description="Maximum tokens to generate.")
+    max_tokens: int = Field(
+        50,
+        ge=1,
+        le=4096,
+        description="Maximum tokens to generate (the deprecated OpenAI spelling; see max_completion_tokens).",
+    )
+    # OpenAI deprecated ``max_tokens`` in favour of ``max_completion_tokens``: the
+    # SDK says so verbatim — "This value is now deprecated in favor of
+    # max_completion_tokens". Modern clients send the NEW name only; measured,
+    # ``langchain_openai.ChatOpenAI(max_tokens=8)`` puts
+    # ``max_completion_tokens: 8`` on the wire. With just ``max_tokens`` declared
+    # and ``extra="ignore"``, that field was dropped and the request ran with the
+    # default 50 — a client asking for 8 tokens got 50, or on a short context a
+    # 400 naming a max_new_tokens it never sent. Accept both spellings.
+    max_completion_tokens: int | None = Field(
+        None,
+        ge=1,
+        le=4096,
+        description="Maximum tokens to generate. Preferred OpenAI spelling; overrides max_tokens when set.",
+    )
     temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature.")
     top_p: float | None = Field(
         None, gt=0.0, le=1.0, description="Nucleus sampling parameter. 1.0 means no truncation."
@@ -280,6 +299,18 @@ class ChatCompletionRequest(BaseModel):
     response_format: dict[str, Any] | None = Field(None, description="UNSUPPORTED: structured output.")
     stream_options: dict[str, Any] | None = Field(None, description="UNSUPPORTED: stream usage reporting.")
     tools: list[Any] | None = Field(None, description="UNSUPPORTED: tool/function calling.")
+
+    @model_validator(mode="after")
+    def _prefer_completion_tokens(self) -> ChatCompletionRequest:
+        """Fold the two max-token spellings into ``max_tokens``.
+
+        ``max_completion_tokens`` wins when both are present: it is the field
+        OpenAI still supports, so a client that sets it means it. Downstream code
+        keeps reading ``max_tokens`` alone, leaving exactly one place to get right.
+        """
+        if self.max_completion_tokens is not None:
+            self.max_tokens = self.max_completion_tokens
+        return self
 
     @model_validator(mode="after")
     def _reject_unsupported_knobs(self) -> ChatCompletionRequest:

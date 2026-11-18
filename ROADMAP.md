@@ -539,7 +539,7 @@
 
 #### 14.3 应用框架集成
 
-- [ ] LangChain / LlamaIndex 官方 adapter 示例 (Serving OpenAI API 已可用)
+- [x] LangChain / LlamaIndex 官方 adapter 示例 — **无需写 adapter**：两者都直接对接 OpenAI 兼容层，示例见 `examples/langchain_demo.py` / `examples/llamaindex_demo.py`（均以真实服务实测跑通）。过程中发现并修复了一个真实兼容缺陷：OpenAI 已弃用 `max_tokens`、改用 `max_completion_tokens`，而 `ChatOpenAI` 只发新名字，服务端原先只认旧名字，导致 `max_tokens=8` 的请求静默跑默认 50
 - [x] 提供标准化 HTTP API (OpenAI 兼容层)
 
 #### 14.4 模型共享

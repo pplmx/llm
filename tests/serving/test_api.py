@@ -930,3 +930,74 @@ def test_queue_full_handler_precedes_the_generic_runtime_error_handler():
         assert "ErrorCode.MODEL_UNAVAILABLE" not in block, (
             f"QueueFullError handler maps to MODEL_UNAVAILABLE: {block[:200]!r}"
         )
+
+
+# --- max_completion_tokens (the current OpenAI spelling) --------------------
+
+
+def test_max_completion_tokens_is_accepted_and_applied():
+    """Modern clients send ``max_completion_tokens``; it must be honoured.
+
+    OpenAI deprecated ``max_tokens`` in favour of ``max_completion_tokens`` — the
+    SDK says so verbatim. Measured: ``langchain_openai.ChatOpenAI(max_tokens=8)``
+    puts ``max_completion_tokens: 8`` on the wire. With only ``max_tokens``
+    declared and ``extra="ignore"`` on the model, that field was dropped and the
+    request ran with the default 50: a client asking for 8 tokens got 50, and on
+    a short context a 400 complaining about a ``max_new_tokens`` it never sent.
+    """
+    from llm.serving.schemas import ChatCompletionRequest
+
+    messages = [{"role": "user", "content": "hi"}]
+
+    assert ChatCompletionRequest(messages=messages, max_completion_tokens=8).max_tokens == 8
+    # The legacy spelling still works.
+    assert ChatCompletionRequest(messages=messages, max_tokens=8).max_tokens == 8
+    # When both are sent the current spelling wins.
+    assert ChatCompletionRequest(messages=messages, max_tokens=99, max_completion_tokens=8).max_tokens == 8
+    # Neither means the documented default.
+    assert ChatCompletionRequest(messages=messages).max_tokens == 50
+
+
+def test_max_completion_tokens_cannot_exceed_the_shared_bound():
+    """The new spelling must not be a way around the 4096 cap."""
+    from pydantic import ValidationError
+
+    from llm.serving.schemas import ChatCompletionRequest
+
+    with pytest.raises(ValidationError):
+        ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], max_completion_tokens=999999)
+
+
+@pytest.mark.slow
+def test_the_endpoint_honours_max_completion_tokens(client):
+    """End-to-end: the generated length must follow the NEW field name.
+
+    This is the assertion a client actually cares about. Asking for 2 tokens
+    through ``max_completion_tokens`` and getting the default 50 would fail here
+    even though the schema-level test above passed, because the router could
+    still read the wrong attribute.
+    """
+    messages = [{"role": "user", "content": "abc"}]
+    legacy = client.post(
+        "/v1/chat/completions",
+        json={"model": "tiny", "messages": messages, "max_tokens": 2, "temperature": 0.0},
+    )
+    current = client.post(
+        "/v1/chat/completions",
+        json={"model": "tiny", "messages": messages, "max_completion_tokens": 2, "temperature": 0.0},
+    )
+    assert legacy.status_code == 200, legacy.text
+    assert current.status_code == 200, current.text
+
+    # The two spellings must mean the SAME thing. Comparing against the legacy
+    # field rather than an absolute number keeps the test about the new field:
+    # the char tokenizer's exact accounting (BOS, stop handling) is not the
+    # subject here, and pinning it would make this fail for unrelated reasons.
+    legacy_usage = legacy.json()["usage"]["completion_tokens"]
+    current_usage = current.json()["usage"]["completion_tokens"]
+    assert current_usage == legacy_usage, (
+        f"max_completion_tokens=2 produced {current_usage} tokens but max_tokens=2 produced "
+        f"{legacy_usage}; the new spelling is not reaching the generator"
+    )
+    # And it must actually bound the output, not be the default 50.
+    assert current_usage < 50, f"max_completion_tokens=2 looks ignored; generated {current_usage} tokens"

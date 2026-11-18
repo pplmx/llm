@@ -36,13 +36,15 @@ uv run examples/qlora_finetuning_demo.py
 
 ## 示例文件详解
 
-| 文件                       | 功能                   | 关键依赖                                         |
-| -------------------------- | ---------------------- | ------------------------------------------------ |
-| `inference_demo.py`        | 基础文本生成           | DecoderModel, SimpleCharacterTokenizer, generate |
-| `openai_client_demo.py`    | OpenAI 兼容 API 客户端 | openai SDK, SSE 流式                             |
-| `kv_cache_demo.py`         | KV Cache 高效推理      | KVCache, GQA (num_kv_heads)                      |
-| `qlora_finetuning_demo.py` | QLoRA 微调             | apply_qlora, NF4 量化, LoRA 适配器               |
-| `moe_vs_mlp_demo.py`       | MoE 与稠密 MLP 对比    | MoE, MLP                                         |
+| 文件                       | 功能                    | 关键依赖                                         |
+| -------------------------- | ----------------------- | ------------------------------------------------ |
+| `inference_demo.py`        | 基础文本生成            | DecoderModel, SimpleCharacterTokenizer, generate |
+| `openai_client_demo.py`    | OpenAI 兼容 API 客户端  | openai SDK, SSE 流式                             |
+| `langchain_demo.py`        | LangChain 调用 serving  | langchain-openai（示例专用，非项目依赖）         |
+| `llamaindex_demo.py`       | LlamaIndex 调用 serving | llama-index-llms-openai-like（示例专用）         |
+| `kv_cache_demo.py`         | KV Cache 高效推理       | KVCache, GQA (num_kv_heads)                      |
+| `qlora_finetuning_demo.py` | QLoRA 微调              | apply_qlora, NF4 量化, LoRA 适配器               |
+| `moe_vs_mlp_demo.py`       | MoE 与稠密 MLP 对比     | MoE, MLP                                         |
 
 > 更多 PEFT 方法的示例（IA³、BitFit、Adapter、Prefix Tuning 等）请参考 [微调指南](../docs/guides/finetuning.md) 和 [PEFT 注册表](../src/llm/core/peft/)。所有 8 种内置 PEFT 方法共享统一的 `peft_method` 配置接口。
 
