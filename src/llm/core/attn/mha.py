@@ -202,6 +202,13 @@ class MultiHeadAttention(nn.Module):
                 the KV cache write so the cache only stores dynamic tokens.
             use_cache (bool): Whether to return the updated (key, value) pair.
             batch_indices (Tensor | None): Indices for specific KV cache slots [B]. Use with update_at_indices.
+                This path does NOT maintain ``kv_cache.seq_len`` (a continuous-batching
+                batch has sequences of different lengths, so positions are supplied
+                per row instead of read off the cache). Two consequences: ``has_past``
+                is derived from ``start_pos`` rather than the cache, and a subsequent
+                forward on the same cache still sees ``seq_len == 0`` — callers
+                driving this path must pass an explicit ``attn_mask`` covering the
+                whole key history, exactly as the serving engine does.
             start_pos (int | Tensor | None): Explicit write position for cache update. required if batch_indices is used.
             paged_kv_cache (PagedKVCache | None): Block-allocator KV cache. When set
                 the linear ``kv_cache`` argument is ignored — the model writes K/V
@@ -292,15 +299,22 @@ class MultiHeadAttention(nn.Module):
             if batch_indices is not None:
                 if start_pos is None:
                     raise ValueError("start_pos must be provided when using batch_indices for KV cache update.")
+                # ``has_past`` decides ``is_causal`` for the SDPA call below, so
+                # asserting it unconditionally made a PREFILL non-causal: a
+                # caller passing ``batch_indices`` for the first pass (empty
+                # cache) got a full-attention prefill where position 0 could see
+                # the last token — measured 0.14 max divergence from the causal
+                # result, silently. The serving engine escapes this only because
+                # it always supplies an explicit ``run_attn_mask``, which
+                # overrides ``is_causal``.
+                #
+                # Derive it from the positions actually being written instead:
+                # the batch has history iff some row starts past position 0.
+                # ``start_pos`` is either an int or a ``[B, S]`` position grid,
+                # and both forms are available here without a host sync in the
+                # common case (an int compares directly).
+                has_past = bool((start_pos.min() > 0).item()) if isinstance(start_pos, Tensor) else int(start_pos) > 0
                 k, v = kv_cache.update_at_indices(batch_indices, k, v, start_pos)
-                # has_past logic for 'update_at_indices' scenario:
-                # It implies we are manually managing positions, so usually we don't rely on global seq_len check?
-                # SDPA 'is_causal' logic:
-                # If we are in Decode (seq_len=1), is_causal=False usually (we attend to all past).
-                # If we are in Prefill, is_causal=True.
-                # Let's assume the caller sets is_causal correctly or we are managing 'has_past' effectively.
-                # For 'update_at_indices', we likely have past data.
-                has_past = True
             else:
                 k, v = kv_cache.update(k, v)
                 has_past = kv_cache.seq_len > seq_len

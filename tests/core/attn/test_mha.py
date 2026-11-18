@@ -6,6 +6,8 @@ import pytest
 import torch
 
 from llm.core.attn import MultiHeadAttention
+from llm.core.kv_cache import KVCache
+from llm.models.decoder import DecoderModel
 
 if TYPE_CHECKING:
     from llm.core.paged_attention.paged_kv_cache import PagedKVCache
@@ -577,8 +579,6 @@ def test_mha_rope_decode_matches_prefill():
 
     with torch.no_grad():
         # prefill 4 tokens then decode token 4 from the cache
-        from llm.core.kv_cache import KVCache
-
         cache = KVCache(
             max_batch_size=1,
             max_seq_len=64,
@@ -784,3 +784,82 @@ def test_mha_rope_treats_a_zero_dim_zero_as_positions_from_the_start():
         from_scalar_tensor = mha(x, start_pos=torch.tensor(0))
 
     assert torch.allclose(from_scalar_tensor, from_int, atol=1e-6)
+
+
+def test_batch_indices_prefill_stays_causal():
+    """The ``batch_indices`` path must not turn a PREFILL into full attention.
+
+    ``has_past`` decides ``is_causal`` for the SDPA call. It used to be
+    hardcoded ``True`` on this path, so a caller passing ``batch_indices`` plus
+    ``position_ids`` for the FIRST pass (empty cache) silently got a non-causal
+    prefill — position 0 could attend to the last token. Measured: 0.14 max
+    divergence from the causal result, with no error and no warning.
+
+    The serving engine never hit this because it always supplies an explicit
+    ``run_attn_mask``, which overrides ``is_causal``; a direct caller had no such
+    protection.
+    """
+    torch.manual_seed(0)
+    model = DecoderModel(
+        vocab_size=32,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        use_rope=True,
+    ).eval()
+    prompt = torch.tensor([[3, 4, 5]])
+
+    with torch.no_grad():
+        explicit_cache = KVCache(1, 16, 2, 8)
+        explicit = model(
+            prompt,
+            use_cache=True,
+            kv_caches=[explicit_cache],
+            batch_indices=torch.tensor([0]),
+            position_ids=torch.tensor([[0, 1, 2]]),
+        )
+        explicit = explicit[0] if isinstance(explicit, tuple) else explicit
+
+        plain_cache = KVCache(1, 16, 2, 8)
+        plain = model(prompt, use_cache=True, kv_caches=[plain_cache])
+        plain = plain[0] if isinstance(plain, tuple) else plain
+
+    assert torch.allclose(explicit, plain, atol=1e-5), (
+        f"the batch_indices prefill diverged from the causal result by "
+        f"{float((explicit - plain).abs().max()):.3e}; has_past is being assumed rather than derived"
+    )
+
+
+def test_batch_indices_prefill_does_not_leak_future_tokens():
+    """Direct causal check: position 0 must be unchanged by later prompt tokens."""
+    torch.manual_seed(0)
+    model = DecoderModel(
+        vocab_size=32,
+        hidden_size=16,
+        num_layers=1,
+        num_heads=2,
+        max_seq_len=16,
+        use_rope=True,
+    ).eval()
+
+    def first_position_logits(tokens):
+        cache = KVCache(1, 16, 2, 8)
+        positions = torch.arange(len(tokens)).unsqueeze(0)
+        with torch.no_grad():
+            out = model(
+                torch.tensor([tokens]),
+                use_cache=True,
+                kv_caches=[cache],
+                batch_indices=torch.tensor([0]),
+                position_ids=positions,
+            )
+        out = out[0] if isinstance(out, tuple) else out
+        return out[0, 0]
+
+    short = first_position_logits([3, 4])
+    long = first_position_logits([3, 4, 5])
+
+    assert torch.allclose(short, long, atol=1e-5), (
+        "position 0 changed when later tokens were appended — the prefill attended to the future"
+    )
