@@ -445,3 +445,74 @@ def test_finite_weights_are_unaffected():
     for ttype in (GGMLQuantizationType.F32, GGMLQuantizationType.F16, GGMLQuantizationType.Q4_K):
         payload = _encode_payload(rng.standard_normal(256).astype(np.float32), ttype)
         assert payload, f"{ttype.name} produced an empty payload"
+
+
+# --- the file must be readable by llama.cpp's OWN reader -------------------
+#
+# ``test_roundtrip_f32_is_exact`` verifies fidelity through OUR loader, so a
+# shared misunderstanding of the container (header layout, reversed dimensions,
+# offsets relative to the wrong base) would survive both halves. This project
+# already depends on ``gguf`` (llama.cpp's reference reader) for the k-quant
+# cross-checks, so the strongest available oracle is right here.
+#
+# Note the dimension convention it exposes: GGUF stores dimensions innermost
+# first, so a ``(rows, cols)`` tensor arrives as ``[cols, rows]``. That is the
+# format's own behaviour — llama.cpp's writer does the same — so it is asserted
+# rather than "corrected".
+
+
+def test_llama_cpp_reader_recovers_the_f32_tensors(roundtrip_config, tmp_path):
+    """An F32 export read by ``gguf.GGUFReader`` must match the model exactly."""
+    gguf = pytest.importorskip("gguf", reason="gguf-py is llama.cpp's reference reader")
+
+    torch.manual_seed(0)
+    model = _build_model(roundtrip_config).eval()
+    path = export_to_gguf(model, tmp_path / "foreign.gguf", quantize="f32", model_config=roundtrip_config.model_dump())
+
+    reader = gguf.GGUFReader(str(path))
+    state = model.state_dict()
+    recovered = {tensor.name: tensor for tensor in reader.tensors}
+    assert recovered, "the reference reader found no tensors"
+
+    for name, source in state.items():
+        assert name in recovered, f"{name} missing from the reference reader's view"
+        # ``t.data`` is already shaped in GGUF's innermost-first order.
+        published = np.array(recovered[name].data, dtype=np.float32)
+        expected = source.detach().cpu().float().numpy()
+        assert published.size == expected.size, f"{name}: {published.size} values vs {expected.size}"
+        # Compare flat: the ordering is the format's convention, not a defect.
+        assert np.array_equal(published.ravel(), expected.ravel()), (
+            f"{name} drifted by {float(np.abs(published.ravel() - expected.ravel()).max()):.2e} "
+            "when read through llama.cpp's reader"
+        )
+
+
+def test_gguf_dimensions_are_stored_innermost_first(roundtrip_config, tmp_path):
+    """A 2-D tensor arrives transposed — llama.cpp's convention, pinned explicitly.
+
+    Asserting this stops a future "fix" that transposes on the way out to make
+    the reader's shape match PyTorch: that would corrupt every consumer that
+    follows the format.
+    """
+    gguf = pytest.importorskip("gguf", reason="gguf-py is llama.cpp's reference reader")
+
+    torch.manual_seed(0)
+    model = _build_model(roundtrip_config).eval()
+    path = export_to_gguf(model, tmp_path / "dims.gguf", quantize="f32", model_config=roundtrip_config.model_dump())
+
+    reader = gguf.GGUFReader(str(path))
+    state = model.state_dict()
+    checked = 0
+    for tensor in reader.tensors:
+        if tensor.name not in state:
+            continue
+        source = state[tensor.name]
+        if source.ndim != 2:
+            continue
+        assert tuple(tensor.shape) == tuple(reversed(source.shape)), (
+            f"{tensor.name}: GGUF reports {tuple(tensor.shape)} for a PyTorch {tuple(source.shape)}; "
+            "dimensions are stored innermost first"
+        )
+        checked += 1
+
+    assert checked > 0, "the test model has no 2-D tensors to check"
