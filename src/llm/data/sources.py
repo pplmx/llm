@@ -311,19 +311,22 @@ class DedupTextSource(TextSource):
     def iter_texts(self, skip: int = 0) -> Iterator[str]:
         # The ``skip`` contract is the one StreamingTextDataset relies on
         # for checkpoint resume: "skip the first ``skip`` records *of this
-        # source*". Two modes give it different, self-consistent meanings:
+        # source*". BOTH modes count **survivors of this source** — the records
+        # the caller already observed — and both walk the raw stream from the
+        # head to do it:
         #
         # * Persisted-append mode (``seen_hashes_path`` + ``write_seen_hashes``):
-        #   ``skip`` is delegated to the inner source as a **raw-record**
-        #   fast-forward. The construction-time seen-set (``_persisted``, the
-        #   durable file) already covers every consumed record, so a resume
-        #   re-examines without re-yielding and stays exact. This branch is
-        #   intentionally unchanged from the historical behavior.
+        #   the durable seen-set covers every record consumed by earlier runs, so
+        #   a resume re-examines them without re-yielding. ``skip`` is NOT
+        #   delegated to the inner source as a raw-record fast-forward: the
+        #   skipped records would never enter ``seen``, and a duplicate of one of
+        #   them later in the file would then look new (`_iter_persisted`
+        #   documents the measurement). This previously DID fast-forward, which is
+        #   why the paragraph below describes the historical behavior.
         #
         # * In-memory mode (no file / read-only baseline): there is no durable
-        #   seen-set, so ``skip`` counts **survivors of this source** — the
-        #   records the caller already observed. The skipped survivors are
-        #   re-hashed from the start so the rebuilt seen-set matches the
+        #   seen-set, so the skipped survivors are re-hashed from the start so
+        #   the rebuilt seen-set matches the
         #   pre-resume session exactly; otherwise a resumed pass re-processes
         #   the tail of the consumed window as fresh data and the streaming
         #   cursor (which counts survivors) diverges from the raw-record skip
@@ -340,7 +343,7 @@ class DedupTextSource(TextSource):
         return self._iter_inmemory(skip)
 
     def _iter_persisted(self, skip: int) -> Iterator[str]:
-        """Persisted-append mode: raw-record skip + durable seen-set.
+        """Persisted-append mode: survivor-counted skip + durable seen-set.
 
         Performance note: the seen-hashes file is opened **once per
         iteration pass** rather than once per surviving record. On a
