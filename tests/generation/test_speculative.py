@@ -984,3 +984,96 @@ def test_speculative_stop_does_not_drop_text_before_the_boundary_chunk():
     seq = [1, 2, 3, 4, 5, 6, 7]  # b c d e f g h
     out = _run_speculative_greedy(seq, seq, tok, max_new_tokens=7, stop="fgh")
     assert out == "bcde", f"expected 'bcde', got {out!r}"
+
+
+def test_the_combined_accept_reject_output_matches_the_target_distribution():
+    """The END-TO-END guarantee: emitted tokens follow the target distribution.
+
+    The existing rejection test checks the two halves separately — the
+    acceptance rate against ``min(1, p/q)`` and the correction against the
+    normalized residual. The property that matters is the combination,
+
+        accepted_mass = min(p, q)
+        output        = min(p, q) + (1 - sum(min(p, q))) * normalize((p - q)+)
+                      = p
+
+    and a pair of individually-plausible halves can still compose wrong.
+
+    The proposal MUST be sampled from the draft distribution ``q``. Forcing a
+    fixed candidate (the obvious first attempt at this test) can only ever emit
+    that candidate or residual support, so its output cannot equal a ``p`` with
+    mass elsewhere — measured 0.24 deviation from ``p`` for an algorithm that is
+    actually correct. Sampling the proposal reproduces ``p`` to 8e-4.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    torch.manual_seed(0)
+    vocab = 6
+    p_log = torch.tensor([2.5, 2.0, 1.2, 0.4, -0.6, -1.4], device=DEFAULT_DEVICE)
+    q_log = torch.tensor([0.8, 2.6, 1.6, 1.0, -0.2, -1.0], device=DEFAULT_DEVICE)
+    target = _ConstLogitsModel(p_log)
+    draft = _ConstLogitsModel(q_log)
+    p = torch.softmax(p_log, -1)
+    q = torch.softmax(q_log, -1)
+
+    prompt = torch.tensor([[1, 2, 3]], dtype=torch.long, device=DEFAULT_DEVICE)
+    n = 6000
+    emitted = torch.zeros(vocab, device=DEFAULT_DEVICE)
+    for _ in range(n):
+        # Draw the candidate from the DRAFT, which is what the draft model does.
+        x = int(torch.multinomial(q, 1))
+        accept_count, bonus = _verify_speculative_tokens(
+            target,
+            draft,
+            prompt,
+            [x],
+            temperature=1.0,
+            top_k=None,
+            top_p=None,
+        )
+        token = x if accept_count == 1 else bonus
+        assert token is not None, "a verification call emitted no token at all"
+        emitted[token] += 1
+
+    empirical = emitted / emitted.sum()
+    deviation = float((empirical - p).abs().max())
+    assert deviation < 0.05, (
+        f"emitted-token distribution deviates from the target by {deviation:.4f}; "
+        f"empirical={empirical.tolist()} target={p.tolist()}"
+    )
+
+
+def test_the_draft_model_does_not_shift_the_output_when_it_equals_the_target():
+    """With draft == target every token is accepted, so the output is exactly p.
+
+    A useful control for the test above: it isolates the acceptance path from
+    the correction path. If acceptance were systematically too strict, this
+    would fall back to corrections and the emitted frequencies would still be
+    right — which is why the rejection-side test is needed too — but a broken
+    ACCEPT branch (rejecting when it should accept) shows up here as a changed
+    acceptance rate.
+    """
+    from llm.generation.speculative import _verify_speculative_tokens
+
+    torch.manual_seed(0)
+    logits = torch.tensor([2.0, 1.0, 0.0, -1.0], device=DEFAULT_DEVICE)
+    model = _ConstLogitsModel(logits)
+    x = int(torch.argmax(logits))
+
+    prompt = torch.tensor([[4, 5]], dtype=torch.long, device=DEFAULT_DEVICE)
+    acceptances = 0
+    n = 500
+    for _ in range(n):
+        accept_count, _ = _verify_speculative_tokens(
+            model,
+            model,
+            prompt,
+            [x],
+            temperature=1.0,
+            top_k=None,
+            top_p=None,
+        )
+        acceptances += accept_count
+
+    # ratio = p/q = 1 for the identical model, so every proposal is accepted.
+    assert acceptances == n, f"only {acceptances}/{n} proposals accepted when draft == target"
