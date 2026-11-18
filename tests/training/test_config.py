@@ -1091,6 +1091,70 @@ class TestUnusedParallelSizes:
         # Anti-vacuity: the source slice must actually contain entries.
         assert table.count('"use_') >= 5, f"only found {table.count(chr(34) + 'use_')} switches in the table"
 
+    def test_kl_coef_warns_without_a_reference_model(self, caplog):
+        """``kl_coef`` is inert when ``use_ref_model=False``; say so.
+
+        ``PPOTrainer.compute_kl_penalty`` early-returns ``0.0`` when there is no
+        reference model, and the loss applies ``kl_loss = self.kl_ctl * kl``
+        unconditionally — so the KL term is identically zero and ``kl_coef`` does
+        nothing. Measured before the check: setting ``kl_coef: 0.5`` with
+        ``use_ref_model: false`` produced no warning, so a run that looked
+        KL-regularised trained with no penalty at all.
+        """
+        import logging
+
+        from llm.training.core.config import PPOConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            PPOConfig(kl_coef=0.5, use_ref_model=False)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("kl_coef" in m and "no effect" in m for m in messages), (
+            f"expected a warning that kl_coef is inert without a reference model, got: {messages}"
+        )
+
+    def test_kl_coef_with_a_reference_model_is_silent(self, caplog):
+        """The legitimate pairing must not warn."""
+        import logging
+
+        from llm.training.core.config import PPOConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            PPOConfig(kl_coef=0.5, use_ref_model=True)
+
+        assert not any("no effect" in record.getMessage() for record in caplog.records)
+
+    def test_target_kl_does_not_warn_without_a_reference_model(self, caplog):
+        """``target_kl`` must stay quiet: it works WITHOUT a reference model.
+
+        The early-stop compares ``approx_kl``, computed from the policy's own
+        old/new ratio (``(ratio - 1) - ratio.log()``), so it never touches the
+        reference model. Warning about it would be wrong, and would push users to
+        drop a setting that does take effect.
+        """
+        import logging
+
+        from llm.training.core.config import PPOConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            PPOConfig(target_kl=0.01, use_ref_model=False)
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert not any("target_kl" in m and "no effect" in m for m in messages), (
+            f"target_kl does not depend on the reference model and must not be reported inert: {messages}"
+        )
+
+    def test_the_ppo_default_does_not_warn(self, caplog):
+        """A plain PPOConfig stays quiet: the check is about explicit intent."""
+        import logging
+
+        from llm.training.core.config import PPOConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            PPOConfig()
+
+        assert not any("kl_coef" in record.getMessage() for record in caplog.records)
+
     def test_zero_stage_under_zero_is_silent(self, caplog):
         """The legitimate pairing must not warn."""
         import logging

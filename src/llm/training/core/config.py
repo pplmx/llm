@@ -1335,6 +1335,31 @@ class PPOConfig(BaseModel):
     ref_model_update_freq: int = 0
 
     @model_validator(mode="after")
+    def _warn_kl_coef_without_a_reference_model(self) -> PPOConfig:
+        """Flag ``kl_coef`` when there is no reference model for it to act on.
+
+        ``PPOTrainer.compute_kl_penalty`` early-returns ``0.0`` when
+        ``self.ref_model is None``, and the loss applies ``kl_loss = self.kl_ctl
+        * kl`` UNCONDITIONALLY — so with ``use_ref_model=False`` the KL term is
+        identically zero and ``kl_coef`` does nothing. Measured: setting
+        ``kl_coef: 0.5`` without a reference model produced no warning, so a run
+        that looked KL-regularised trained with no KL penalty at all.
+
+        ``target_kl`` is deliberately NOT included: the early-stop compares
+        ``approx_kl``, which is computed from the policy's own old/new ratio
+        (``(ratio - 1) - ratio.log()``) and does not involve the reference model,
+        so it keeps working with ``use_ref_model=False``.
+        """
+        if not self.use_ref_model and "kl_coef" in self.model_fields_set:
+            logger.warning(
+                "PPOConfig.kl_coef=%s has no effect because use_ref_model is False: "
+                "compute_kl_penalty returns 0 without a reference model, so the KL penalty is "
+                "identically zero. Set use_ref_model=True to apply it, or remove kl_coef.",
+                self.kl_coef,
+            )
+        return self
+
+    @model_validator(mode="after")
     def _reject_unimplemented_knobs(self) -> PPOConfig:
         """Reject non-default values of knobs the trainer never reads.
 
