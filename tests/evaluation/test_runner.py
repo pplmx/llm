@@ -251,3 +251,66 @@ def test_evaluate_returns_num_samples_like_run(tmp_path: Path):
     assert "num_samples" in eval_results, "evaluate must report num_samples like run"
     assert set(run_results) == {"num_samples", "dummy_score"}
     assert set(eval_results) == {"num_samples", "dummy_score"}
+
+
+# --- non-finite metric values must serialise to strictly valid JSON -------
+#
+# ``_to_serializable`` normalises ``nan``/``inf`` to ``None`` because the stdlib
+# encoder would otherwise emit the non-standard tokens ``NaN`` / ``Infinity``,
+# which ``json.loads`` accepts but strict parsers (and the JSON spec) do not.
+#
+# This is a REACHABLE path, not a hypothetical: ``PerplexityMetric`` returns
+# ``inf`` whenever the eval split is empty, which the empty-dataset case hits.
+
+
+def test_infinite_metric_values_serialise_to_null(stub_runner: EvaluationRunner):
+    """``inf`` must become ``null`` so the file is strictly valid JSON."""
+    import json
+
+    stub_runner.save_report({"num_samples": 0, "perplexity": float("inf")})
+
+    text = (stub_runner.output_dir / "eval_report.json").read_text()
+    # The non-standard tokens must not appear at all.
+    assert "Infinity" not in text
+    assert "-Infinity" not in text
+
+    parsed = json.loads(text)  # strict: this would accept Infinity, so check text too
+    assert parsed["perplexity"] is None
+    assert parsed["num_samples"] == 0
+
+
+def test_nan_metric_values_serialise_to_null(stub_runner: EvaluationRunner):
+    """``nan`` follows the same rule, and must not leak as the token ``NaN``."""
+    import json
+
+    stub_runner.save_report({"num_samples": 1, "score": float("nan")})
+
+    text = (stub_runner.output_dir / "eval_report.json").read_text()
+    assert "NaN" not in text
+    assert json.loads(text)["score"] is None
+
+
+def test_the_markdown_report_also_survives_a_non_finite_value(stub_runner: EvaluationRunner):
+    """The markdown path goes through the same normalisation and must not crash."""
+    stub_runner.save_report({"num_samples": 0, "perplexity": float("inf")}, output_format="markdown")
+
+    text = (stub_runner.output_dir / "eval_report.md").read_text()
+    assert "perplexity" in text
+    assert "Infinity" not in text
+
+
+def test_an_empty_evaluation_still_writes_a_parseable_report(stub_runner: EvaluationRunner):
+    """End to end: the value ``PerplexityMetric`` produces for an empty split round-trips.
+
+    Guards the combination rather than either half — the metric layer reports
+    ``inf`` for a zero-size batch (documented), and the report on disk must stay
+    valid JSON rather than crash or emit a non-standard token.
+    """
+    import json
+
+    results = {"num_samples": 0, "perplexity": float("inf")}
+    stub_runner.save_report(results)
+
+    parsed = json.loads((stub_runner.output_dir / "eval_report.json").read_text())
+    assert parsed["perplexity"] is None
+    assert parsed["num_samples"] == 0
