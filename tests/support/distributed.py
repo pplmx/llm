@@ -75,6 +75,14 @@ def rendezvous_store(
 
     Children must join as non-master via :func:`make_store` so the parent's store
     stays the single authority for the port.
+
+    Prefer this over writing the ``TCPStore(host, 0, ...)`` inline: several
+    suites publish the port through ``MASTER_PORT`` instead and rely on a
+    trailing ``del store`` after their join loop, which only works because the
+    ``while`` loop above it always reaches that line. A ``with`` block cannot be
+    skipped by an early ``return``/``raise``, so it is the safer shape for new
+    code. The inline form is kept where it already works; there is no behavioural
+    difference between the two, only that lifetime guarantee.
     """
     store = dist.TCPStore(host, 0, world_size, is_master=True, wait_for_workers=False, timeout=timeout)
     try:
