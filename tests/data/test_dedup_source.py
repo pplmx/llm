@@ -716,3 +716,67 @@ def test_dedup_actually_removes_duplicates_through_the_registry(tmp_path):
     rows = list(source.iter_texts())
 
     assert rows == ["same", "unique one", "unique two"]
+
+
+# --- skip in PERSISTED-APPEND mode -----------------------------------------
+#
+# Every existing ``skip`` test uses the in-memory mode. In persisted-append mode
+# (``seen_hashes_path`` + ``write_seen_hashes=True``) the skip was delegated to
+# the inner source as a raw fast-forward, so the skipped records never entered
+# the seen-set and a duplicate of one of them later in the file looked NEW.
+# Measured on ``a b a c b d a e``: after ``skip=2`` the output was
+# ``b a c d e`` (the second ``a`` resurrected) where the correct resume is
+# ``c d e``.
+
+
+def test_persisted_skip_counts_survivors_not_raw_records(tmp_path):
+    """``skip=N`` must drop exactly the first N UNIQUE records."""
+    corpus = _write(tmp_path, "dup.txt", ["a", "b", "a", "c", "b", "d", "a", "e"])
+    source = DedupTextSource(
+        LocalLineTextSource(corpus),
+        seen_hashes_path=tmp_path / "seen.txt",
+        write_seen_hashes=True,
+    )
+
+    full = list(source.iter_texts())
+    assert full == ["a", "b", "c", "d", "e"], f"precondition: dedup produced {full}"
+
+    for skip in range(len(full) + 1):
+        resumed = list(source.iter_texts(skip=skip))
+        assert resumed == full[skip:], (
+            f"skip={skip} produced {resumed}, but the first {skip} survivors are {full[:skip]} "
+            f"so the resume must be {full[skip:]}"
+        )
+
+
+def test_persisted_skip_does_not_resurrect_a_duplicate(tmp_path):
+    """The sharp case: a duplicate of a SKIPPED record must stay dropped."""
+    corpus = _write(tmp_path, "dup.txt", ["x", "y", "x"])
+    source = DedupTextSource(
+        LocalLineTextSource(corpus),
+        seen_hashes_path=tmp_path / "seen.txt",
+        write_seen_hashes=True,
+    )
+
+    # Skip both survivors; nothing is left, and the trailing duplicate of 'x'
+    # must NOT come back as a fresh record.
+    assert list(source.iter_texts(skip=2)) == [], (
+        "the trailing duplicate of 'x' was resurrected because the skipped record's hash was never recorded"
+    )
+
+
+def test_both_modes_agree_on_skip(tmp_path):
+    """The two modes document different mechanisms but must produce the same text."""
+    corpus = _write(tmp_path, "dup.txt", ["a", "b", "a", "c", "b", "d"])
+
+    in_memory = DedupTextSource(LocalLineTextSource(corpus))
+    persisted = DedupTextSource(
+        LocalLineTextSource(corpus),
+        seen_hashes_path=tmp_path / "seen.txt",
+        write_seen_hashes=True,
+    )
+
+    for skip in range(5):
+        assert list(in_memory.iter_texts(skip=skip)) == list(persisted.iter_texts(skip=skip)), (
+            f"the two dedup modes disagree at skip={skip}"
+        )

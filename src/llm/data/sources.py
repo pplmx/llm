@@ -352,12 +352,33 @@ class DedupTextSource(TextSource):
         and the handle is closed when the pass ends.
         """
         seen = set(self._persisted)
+        # Walk the raw stream from the START and count SURVIVORS, exactly like
+        # ``_iter_inmemory``. Delegating ``skip`` to the inner source as a raw
+        # fast-forward is wrong: the skipped records never enter ``seen``, so a
+        # duplicate of one of them later in the file looks new. Measured on
+        # ``a b a c b d a e`` -- after ``skip=2`` the second ``a`` (raw index 2)
+        # survived as a fresh record and the output was ``b a c d e``, where the
+        # correct resume is ``c d e`` with ``b`` re-emitted ahead of it only
+        # because it too had been forgotten.
+        #
+        # The cost is re-hashing the consumed prefix, which the docstring above
+        # used to call out as the reason for the fast-forward. Correctness wins:
+        # a resumed shard that re-yields already-seen text is silent data
+        # corruption, while the re-read is bounded by one pass over the prefix.
+        skipped = 0
         handle = None
         try:
-            for text in self.inner.iter_texts(skip=skip):
+            for text in self.inner.iter_texts():
                 normalized = self.normalize(text)
                 digest = hashlib.new(self.hash_algo, normalized.encode("utf-8")).hexdigest()
                 if digest in seen:
+                    continue
+                if skipped < skip:
+                    # A survivor the caller already consumed before the
+                    # checkpoint: record it so duplicates stay dropped, but do
+                    # not yield it.
+                    seen.add(digest)
+                    skipped += 1
                     continue
                 seen.add(digest)
                 if self._should_persist_writes() and self.seen_hashes_path is not None and digest not in self._written:
