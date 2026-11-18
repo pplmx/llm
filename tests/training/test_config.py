@@ -1030,6 +1030,67 @@ class TestUnusedParallelSizes:
             f"{field}=1 under ddp should stay quiet"
         )
 
+    @pytest.mark.parametrize(
+        ("switch", "suboption", "value"),
+        [
+            # BitFit's switch was absent from the inert-groups table entirely.
+            ("use_bitfit", "bitfit_target_modules", ["q_proj"]),
+            # Prefix tuning listed only `prefix_tuning_len`; the other two
+            # sub-options are read in the same branch (lm_task.py:71-76).
+            ("use_prefix_tuning", "prefix_reparam_hidden", 64),
+            ("use_prefix_tuning", "prefix_target_modules", ["q_proj"]),
+        ],
+    )
+    def test_every_switch_suboption_warns_when_its_switch_is_off(self, switch, suboption, value, caplog):
+        """A sub-option whose switch is off must warn, whichever option it is.
+
+        The inert-groups table is hand-maintained, and it had drifted in two
+        different ways at once: a whole switch (``use_bitfit``) was missing, and
+        an existing entry (``use_prefix_tuning``) listed only one of the three
+        sub-options its branch reads. Measured before the fix: all three of these
+        produced no warning at all, so a config that looked like it enabled
+        BitFit / reconfigured prefix tuning silently ran with the default
+        behaviour.
+        """
+        import logging
+
+        from llm.training.core.config import TrainingConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            TrainingConfig(**{suboption: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(switch in m and suboption in m and "no effect" in m for m in messages), (
+            f"expected a warning that {suboption} is inert while {switch} is off, got: {messages}"
+        )
+
+    def test_every_use_switch_appears_in_the_inert_groups_table(self):
+        """Each ``use_*`` switch in TrainingConfig must be classified.
+
+        This is the structural guard the previous test cannot provide: it does
+        not depend on knowing which sub-option belongs to which switch, so a
+        switch added later without an entry — exactly how ``use_bitfit`` was
+        missed — fails here rather than passing silently.
+        """
+        from llm.training.core import config as config_module
+        from llm.training.core.config import TrainingConfig
+
+        switches = {name for name in TrainingConfig.model_fields if name.startswith("use_")}
+        # The table is defined inside the validator; read it off the live source
+        # so this test cannot drift from the implementation.
+        source = Path(config_module.__file__).read_text(encoding="utf-8")
+        start = source.index("inert_groups = {")
+        end = source.index("}", source.index("use_bitfit", start) if "use_bitfit" in source[start:] else start)
+        table = source[start:end]
+
+        unclassified = sorted(name for name in switches if f'"{name}"' not in table)
+        assert not unclassified, (
+            f"these use_* switches have no inert-groups entry, so their sub-options are silently "
+            f"ignored when the switch is off: {unclassified}"
+        )
+        # Anti-vacuity: the source slice must actually contain entries.
+        assert table.count('"use_') >= 5, f"only found {table.count(chr(34) + 'use_')} switches in the table"
+
     def test_zero_stage_under_zero_is_silent(self, caplog):
         """The legitimate pairing must not warn."""
         import logging

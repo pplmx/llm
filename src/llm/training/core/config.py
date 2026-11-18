@@ -275,9 +275,20 @@ class TrainingConfig(BaseModel):
                 "adalora_prune_every",
                 "adalora_target_modules",
             ),
-            "use_prefix_tuning": ("prefix_tuning_len",),
+            # Prefix tuning reads three sub-options, not just the length:
+            # `lm_task.py:71-76` passes prefix_len / reparam_hidden /
+            # target_modules together inside the `use_prefix_tuning` branch.
+            # Listing only the first two left the other two silent — measured:
+            # `prefix_reparam_hidden=64` and `prefix_target_modules=[...]` with
+            # the switch off produced no warning at all.
+            "use_prefix_tuning": ("prefix_tuning_len", "prefix_reparam_hidden", "prefix_target_modules"),
             "use_ia3": ("ia3_init_scale", "ia3_target_modules"),
             "use_adapter": ("adapter_bottleneck_dim", "adapter_target_modules"),
+            # BitFit has one sub-option and it was missing entirely: the switch
+            # was absent from this table, so `bitfit_target_modules` set with
+            # `use_bitfit=False` was silently ignored (lm_task.py:98-101 reads it
+            # only inside that branch).
+            "use_bitfit": ("bitfit_target_modules",),
         }
         explicitly_set = self.model_fields_set
         for master, suboptions in inert_groups.items():
