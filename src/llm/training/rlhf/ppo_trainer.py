@@ -778,7 +778,14 @@ class PPOTrainer:
         # raw reward scale fed GAE/returns unchanged.
         if self.config.normalize_rewards and rewards:
             stacked = torch.stack(rewards)
-            normalized = (stacked - stacked.mean()) / stacked.std().clamp(min=1e-6)
+            # POPULATION std, for the same reason as the advantage normaliser in
+            # ``rollout_buffer.compute_advantages``: ``.std()`` defaults to
+            # ``unbiased=True`` (divide by N-1), so a batch holding a SINGLE
+            # reward yields NaN. ``clamp(min=1e-6)`` cannot rescue it either —
+            # ``NaN.clamp(...)`` is still NaN — so the NaN reward flowed into GAE
+            # and made every advantage NaN. A one-sample batch is the degenerate
+            # tail of a small rollout, not an exotic input.
+            normalized = (stacked - stacked.mean()) / stacked.std(unbiased=False).clamp(min=1e-6)
             rewards = [normalized[i] for i in range(len(rewards))]
 
         # 3. Store in buffer

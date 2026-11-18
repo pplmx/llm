@@ -1405,6 +1405,30 @@ class TestPPOTrainer:
         assert torch.isfinite(torch.tensor(metrics["reward_mean"]))
         assert abs(metrics["reward_mean"]) < 1e-5
 
+    def test_a_single_reward_normalises_to_zero_not_nan(self, tiny_setup):
+        from llm.training.rlhf.ppo_trainer import PPOTrainer
+
+        policy, reward_model, tokenizer, config = tiny_setup
+        config.normalize_rewards = True
+        config.ppo_epochs = 1
+
+        trainer = PPOTrainer(
+            policy_model=policy,
+            reward_model=reward_model,
+            tokenizer=tokenizer,
+            config=config,
+            device=str(DEFAULT_DEVICE),
+        )
+
+        # ONE prompt: the degenerate batch.
+        metrics = trainer.train_step(["Hello"])
+
+        assert torch.isfinite(torch.tensor(metrics["reward_mean"])), (
+            f"a single-sample batch produced reward_mean={metrics['reward_mean']}; "
+            "the normaliser is using the sample std (divide by N-1)"
+        )
+        assert not torch.isnan(torch.tensor(metrics["loss"])), "the PPO loss is NaN on a one-sample batch"
+
 
 class TestPPORefusesAnEmptyResponseBudget:
     """A non-positive ``response_max_len`` must be rejected, not trained on.
