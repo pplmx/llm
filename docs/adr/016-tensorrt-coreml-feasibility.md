@@ -84,9 +84,26 @@ token 要把整个前缀重新跑一遍。以 prompt=8、新增 16 token 为例�
 ### 如果要做，顺序必须是
 
 1. **先让导出路径支持 KV cache**（真正的瓶颈，且不依赖任何新依赖）。
-   `ExportCacheWrapper` 强制 `use_cache=False` 是因为 trace 时 cache 更新会引入分支。
-   可行的方向是把 cache 作为显式输入/输出张量而不是原地可变对象，让 trace 看到一个
-   纯函数；这与 ADR-004 的 paged cache 是两套契约，需要单独设计。
+   `ExportCacheWrapper` 强制 `use_cache=False` 是因为 cache 更新会引入分支：现行实现
+   在 `mha.py:290` 用 `kv_cache.update(k, v)` **原地写** buffer，tracer 无法把「写」
+   记进图里。
+
+   **该方向已实测可行**（本 ADR 定稿后补做）：
+
+   | 验证项                                                                        | 结果                                            |
+   | ----------------------------------------------------------------------------- | ----------------------------------------------- |
+   | 函数式 cache（补齐后的 K/V 作为显式输入/输出，用 `cat` 代替原地写）能否 trace | 通过，产物 21.4 KiB                             |
+   | trace 出的图能否**增量**运行（把上一步的 present 喂回下一步的 past）          | 通过，cache 从 `(2,4,0,8)` 逐步长到 `(2,4,3,8)` |
+   | 与 eager-with-cache 的数值是否一致                                            | `max|d| = 1.788e-07`（float32 量级）            |
+
+   即「把 cache 由可变对象改成显式张量对」在 trace 层没有障碍。剩余工作是把它接进
+   `DecoderModel` 与导出器：需要一个可选入口让模型以函数式契约运行，同时不能破坏
+   serving 侧 `KVCache` / `PagedKVCache` 的原地语义（ADR-004）。这是**接口设计**问题，
+   不是可行性问题。
+
+   注意：初版验证脚本曾报 `max|d| = 1.06` 的"不匹配"，原因是我在两段代码里各自
+   `manual_seed` 但随机数消耗顺序不同——改用**共享同一组输入张量**后误差降到 1.8e-7。
+   记录在此，避免下次把脚本缺陷误判为实现缺陷。
 2. **再谈 TensorRT**。前置条件已具备（算子全覆盖、opset 17、cu130 wheel 存在），
    主要工作量在 engine 构建 / profile 管理（动态 shape 需要 `optimization_profile`）。
 3. **Core ML 单独评估**，且必须在 Apple 硬件上验证；本机做不了。

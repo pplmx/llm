@@ -73,6 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The export graph's operator set is now pinned to what downstream runtimes implement** (export): `test_onnx_graph_uses_only_backend_portable_operators` asserts the exported graph stays inside the 23-op TensorRT-native set and at opset 17, with an anti-vacuity floor. This is the thing ADR-016's estimate rests on: an exotic operator would turn "configure a backend" into "write a CUDA plugin", and a future model or exporter change could introduce one silently. Dropping `Where` from the allowed set turns it red naming the operator.
 
+
+- **ADR-016's proposed fix for the export path's missing KV cache is verified feasible** (export): the ADR left one question open — can a KV cache be traced at all, or does forcing `use_cache=False` reflect a real limitation of the tracer? Measured: expressing the cache functionally (past K/V as INPUTS, present K/V as OUTPUTS, `cat` instead of an in-place buffer write) traces to ONNX cleanly, the exported graph runs **incrementally** (each step's `present_*` fed back as the next `past_*` grows the cache `(2,4,0,8) → (2,4,3,8)`), and the result matches eager-with-cache to `max|d| = 1.788e-07`. So the remaining work is interface design — giving `DecoderModel` a functional entry point without disturbing the in-place `KVCache`/`PagedKVCache` semantics serving depends on — not a tracer limitation. Recorded in the ADR and pinned by `tests/export/test_functional_kv_cache_export.py` (3 tests). Dropping `present_v` from the graph outputs turns the suite red. One probe artifact is documented so it is not mistaken for a tracer bug: an early version reported `max|d| = 1.06` because the two comparison paths each called `manual_seed` but consumed the RNG in different orders — sharing one set of input tensors dropped it to 1.8e-7.
+
+### Added
+
 ### Added
 
 ### Added
