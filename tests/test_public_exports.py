@@ -140,3 +140,45 @@ def test_entry_point_module_paths_exist_in_the_source_tree():
                 problems.append(f"{group}:{entry_point.name} -> {module_path}: {type(exc).__name__}: {exc}")
 
     assert not problems, "entry points name modules that do not import:\n  " + "\n  ".join(problems)
+
+
+# --- the CLI's own dependency must be DECLARED, not merely transitive ------
+#
+# ``llm.cli`` imports typer at module scope, but typer was only ever pulled in by
+# ``fastapi[standard]`` -- so nothing constrained its version and a fresh install
+# could resolve any release. typer 0.29 dropped the ``click_type=`` argument that
+# ``training/train.py`` passes to ``typer.Option``, so installing the built wheel
+# produced a CLI that failed at import with
+# ``TypeError: Option() got an unexpected keyword argument 'click_type'`` --
+# measured against a clean venv, where the wheel resolved typer 0.29.2 and every
+# subcommand broke while the dev environment (0.27.3) worked.
+#
+# A dependency that a shipped console script needs at import time belongs in
+# ``project.dependencies`` with a ceiling that excludes the breaking release.
+
+
+def test_typer_is_a_declared_runtime_dependency():
+    """typer must be declared directly, not left to transitive resolution."""
+    import tomllib
+    from pathlib import Path
+
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    declared = pyproject["project"]["dependencies"]
+
+    typer_specs = [spec for spec in declared if spec.split(">")[0].split("=")[0].strip() == "typer"]
+    assert typer_specs, (
+        "typer is imported by llm.cli but not declared in project.dependencies; "
+        "relying on it arriving via fastapi[standard] leaves the CLI's version unpinned"
+    )
+
+    spec = typer_specs[0]
+    assert "<0.29" in spec.replace(" ", ""), (
+        f"typer must be capped below 0.29 (it removed Option(click_type=)), got {spec!r}"
+    )
+
+
+def test_the_cli_imports_cleanly():
+    """The console-script target must import — the failure mode users hit."""
+    from llm.cli.main import app
+
+    assert app is not None

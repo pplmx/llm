@@ -38,6 +38,17 @@ dependencies = [
     "starlette>=1.8.0",
     "torch>=2.14.1,<3.0.0",
     "transformers>=5.19.0,<6.0.0",
+    # ``llm.cli`` is built on typer, but it was only ever present as a
+    # transitive dependency of ``fastapi[standard]`` -- so nothing pinned it and
+    # an install could resolve any version. typer 0.29 removed the
+    # ``click_type=`` argument that ``training/train.py`` passes to
+    # ``typer.Option``, so a fresh install of the built wheel crashed on
+    # ``llm --version`` with
+    # ``TypeError: Option() got an unexpected keyword argument 'click_type'``
+    # (measured: wheel install resolved typer 0.29.2 and every subcommand failed
+    # at import; the dev environment had 0.27.3 and worked). Declare it directly
+    # with a ceiling below the breaking release.
+    "typer>=0.27.3,<0.29",
     "urllib3>=2.8.0",  # bumped: PYSEC-2026-4175/4176/4177 (transitive via requests/sentry-sdk) fixed in 2.8.0
 ]
 

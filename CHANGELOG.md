@@ -380,6 +380,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ran `just test-doc`, the last gate this session had not executed — it passes** (testing): `pytest --doctest-modules src/llm/` = **4 passed, 2 skipped**, the skips being examples that carry pytest's `+SKIP` marker. The low count is not a coverage hole: the source has 24 `>>>` lines but they cluster into a handful of multi-line docstrings (one test per docstring), and the samples that exercise real APIs do run — `core/peft/registry.py` apply-and-count and `core/kv_cache.py`'s construction sample both pass when run directly. Every gate this repo defines has now been executed in this session and is green: `test-fast` (4803 passed), `test-heavy` (86), `test-e2e` (58), `test-gpu` (32), `test-doc` (4), plus `check` and `docs`. **No product defect and no code change.**
 
+
+- **A wheel installed from `dist/` shipped a CLI that could not start** (packaging): `llm.cli` builds every command on typer, but typer was never declared in `project.dependencies` — it only arrived transitively through `fastapi[standard]`, so nothing constrained the version. Building the wheel and installing it into a clean venv resolved **typer 0.29.2**, which removed the `click_type=` argument that `training/train.py` passes to `typer.Option`, and every subcommand died at import with `TypeError: Option() got an unexpected keyword argument 'click_type'` — including `llm --version`. The dev environment had typer 0.27.3 and worked, which is exactly why no test caught it: nothing ever installed the built artefact. `typer>=0.27.3,<0.29` is now a direct dependency, and re-installing the rebuilt wheel resolves 0.28.0 with `llm --version` and `llm train --help` both working. Two regression tests pin it: the declaration exists with a ceiling below the breaking release (removing the line turns it red), and `llm.cli.main.app` imports. Found by running `just build` — the one gate this session had not exercised — and then checking the wheel rather than trusting that a successful build meant a usable install.
+
+### Added
+
 ### Added
 
 ### Added
