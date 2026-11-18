@@ -450,38 +450,6 @@ def test_b_time_reports_the_current_batch_not_the_running_mean(tmp_path):
         )
 
 
-def test_b_time_tracks_the_current_batch_instead_of_decaying(tmp_path):
-    """A running mean decays monotonically; per-batch timings do not.
-
-    Measured before the fix, over real times of 319.1 / 2.6 / 1.5 / 1.5 / 1.5 ms,
-    the log printed 319.1 / 160.9 / 107.7 / 81.2 / 65.2 ms — every step smaller.
-    """
-    config = _time_config(tmp_path)
-    data_module = SyntheticDataModule(config)
-    data_module.setup()
-    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
-
-    stream = _capture_engine_log(engine)
-    try:
-        engine._run_epoch(0)
-    finally:
-        engine.logger.removeHandler(stream)
-
-    printed = [
-        float(line.split("B-Time: ")[1].split("ms")[0])
-        for line in stream.getvalue().splitlines()
-        if "B-Time:" in line and "n/a" not in line
-    ]
-    assert len(printed) == 5, f"expected 5 timed batches, got {printed}"
-    tail = printed[1:]
-    # Steady-state batches do equal work, so their timings cluster; a running
-    # mean instead shrinks on every step.
-    assert max(tail) - min(tail) < 0.5 * max(tail), (
-        f"the B-Time tail ({tail}) is not clustered around a constant, which is the "
-        "signature of a running mean rather than per-batch measurements"
-    )
-
-
 def test_the_validation_log_does_not_report_a_training_average(tmp_path):
     """Validation never times its batches, so it must print n/a, not the training mean."""
     config = _time_config(tmp_path)

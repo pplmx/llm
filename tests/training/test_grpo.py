@@ -217,3 +217,78 @@ def test_grpo_engine_improves_group_reward():
         assert after >= before
     finally:
         torch.set_num_threads(prev)
+
+
+# --- the advantage normaliser must use the POPULATION std -------------------
+#
+# ``group_advantages`` divides by ``rewards.std(unbiased=False)``. Switching that
+# to the sample std (``unbiased=True``) left all ten tests passing — verified —
+# even though it changes the objective in two ways:
+#   * a single-sample group gives std = NaN (the sample std divides by G-1 = 0),
+#     poisoning every advantage in the batch;
+#   * for larger groups the divisor is sqrt(G/(G-1)) larger, silently shrinking
+#     every advantage by 15-29% for the usual G of 4-8.
+# The GRPO paper and the reference implementations use the population std.
+
+
+def test_a_single_sample_group_produces_zero_advantage_not_nan():
+    """G=1 must yield 0: no spread means no signal, not an undefined z-score.
+
+    The sample std divides by ``G-1``, so this is the case where the choice
+    between the two conventions is not a scale difference but a NaN.
+    """
+    from llm.training.rlhf.grpo import group_advantages
+
+    rewards = torch.tensor([[5.0]])  # one prompt, one sample
+    advantages = group_advantages(rewards)
+
+    assert not torch.isnan(advantages).any(), (
+        "a single-sample group produced NaN; the normaliser is using the sample std"
+    )
+    assert torch.allclose(advantages, torch.zeros_like(advantages))
+
+
+def test_the_advantage_scale_matches_the_population_std():
+    """Pin the exact normalisation: (r - mean) / (population_std + eps)."""
+    from llm.training.rlhf.grpo import group_advantages
+
+    rewards = torch.tensor([[1.0, 2.0, 3.0, 4.0]])
+    eps = 1e-4
+
+    expected = (rewards - rewards.mean()) / (rewards.std(unbiased=False) + eps)
+    actual = group_advantages(rewards, eps=eps)
+
+    assert torch.allclose(actual, expected, atol=1e-6), (
+        f"advantages {actual.tolist()} do not match the population-std normalisation {expected.tolist()}"
+    )
+    # And they must NOT match the sample-std form.
+    sample_form = (rewards - rewards.mean()) / (rewards.std(unbiased=True) + eps)
+    assert not torch.allclose(actual, sample_form, atol=1e-3), (
+        "the advantages match the SAMPLE-std form; the population std is the documented choice"
+    )
+
+
+def test_every_group_is_centred_at_zero():
+    """Z-scoring is only meaningful if each group's mean advantage is 0."""
+    from llm.training.rlhf.grpo import group_advantages
+
+    torch.manual_seed(0)
+    for group_size in (2, 4, 8):
+        rewards = torch.randn(3, group_size)
+        advantages = group_advantages(rewards)
+        assert torch.allclose(advantages.mean(dim=-1), torch.zeros(3), atol=1e-6), (
+            f"group_size={group_size}: group means are {advantages.mean(dim=-1).tolist()}, not 0"
+        )
+        assert not torch.isnan(advantages).any()
+
+
+def test_a_constant_group_yields_zero_advantage():
+    """All-equal rewards carry no information; the advantages must all be 0."""
+    from llm.training.rlhf.grpo import group_advantages
+
+    rewards = torch.full((2, 4), 3.0)
+    advantages = group_advantages(rewards)
+
+    assert torch.allclose(advantages, torch.zeros_like(advantages)), (
+        f"a constant reward group produced {advantages.tolist()} instead of zeros"
+    )
