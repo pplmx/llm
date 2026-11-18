@@ -483,3 +483,39 @@ def test_streaming_dataset_midstream_resume_reproduces_the_exact_continuation(tm
         "resuming mid-stream diverged from the uninterrupted run: the cursor "
         "and/or the partial token buffer were not restored exactly"
     )
+
+
+# --- shard keys must actually separate shards ------------------------------
+#
+# ``rank * num_workers + worker_id`` only separates ranks when num_workers >= 1.
+# With 0 every rank collapses to key "0" and all ranks would SHARE one resume
+# cursor — a resumed run would then skip or replay data on every rank but the
+# first, which shows up only as slightly-wrong training data.
+
+
+def test_every_rank_and_worker_gets_its_own_key():
+    from llm.data.stream_state import StreamDataState
+
+    state = StreamDataState()
+    keys = {state.shard_key(rank, worker, 2) for rank in range(4) for worker in range(2)}
+    assert len(keys) == 8, f"shard keys collided: {sorted(keys)}"
+
+
+def test_zero_workers_is_refused():
+    """It would silently map every rank to the same cursor."""
+    import pytest
+
+    from llm.data.stream_state import StreamDataState
+
+    with pytest.raises(ValueError, match="num_workers"):
+        StreamDataState.shard_key(0, 0, 0)
+
+
+def test_an_out_of_range_worker_is_refused():
+    """A worker id outside [0, num_workers) would alias another worker's cursor."""
+    import pytest
+
+    from llm.data.stream_state import StreamDataState
+
+    with pytest.raises(ValueError, match="worker_id"):
+        StreamDataState.shard_key(0, 5, 2)

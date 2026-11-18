@@ -33,6 +33,26 @@ class StreamDataState:
 
     @staticmethod
     def shard_key(rank: int, worker_id: int, num_workers: int) -> str:
+        """Key for one (rank, worker) cursor.
+
+        ``rank * num_workers + worker_id`` only separates ranks when
+        ``num_workers >= 1``: with 0 every rank collapses to key ``"0"`` and all
+        ranks would SHARE one resume cursor, so a resumed run silently skips or
+        replays data on every rank but the first. Measured: 4 ranks with
+        ``num_workers=0`` produced a single key.
+
+        The streaming dataset always passes at least 1 (it substitutes 1 for the
+        single-process loader), so this is a guard against a future caller rather
+        than a live bug — but a silent shared cursor is the kind of failure that
+        only shows up as slightly-wrong training data, so it is refused here.
+        """
+        if num_workers < 1:
+            raise ValueError(
+                f"num_workers must be >= 1 to compute a shard key, got {num_workers}; "
+                "0 would map every rank to the same cursor"
+            )
+        if not 0 <= worker_id < num_workers:
+            raise ValueError(f"worker_id must be in [0, {num_workers}), got {worker_id}")
         shard_id = rank * num_workers + worker_id
         return str(shard_id)
 
