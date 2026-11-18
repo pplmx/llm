@@ -1,6 +1,6 @@
 import sys
 import time
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, suppress
 from typing import Any, cast
 
 import torch
@@ -187,6 +187,26 @@ class TrainingEngine:
                 "method": peft_method,
                 "kwargs": dict(getattr(training_cfg, "peft_kwargs", None) or {}),
             }
+        # RNG state. ``DistributedManager.setup`` seeds ``42 + global_rank`` on
+        # EVERY process start, so a resumed run restarted the random stream from
+        # the beginning: the DataLoader shuffle replayed the SAME batches and
+        # dropout re-drew the same masks. Measured -- with the seed reset, two
+        # ``randperm(8)`` draws after a restart were identical to the first
+        # run's, i.e. the resumed epochs re-trained on the orders already seen.
+        # Persisting the RNG states makes the resumed draw continue where it
+        # stopped instead of replaying.
+        #
+        # The CPU generator is always saved; the CUDA one only when a device is
+        # present, because ``torch.cuda.get_rng_state`` raises on a CPU-only
+        # build. Each is cloned and moved to the CPU so the tensor is
+        # serializable and not a live view of the generator's internal state.
+        rng_state: dict[str, Any] = {"cpu": torch.get_rng_state()}
+        if torch.cuda.is_available():
+            with suppress(RuntimeError):
+                # Device present but unusable in this process: the CPU state is
+                # still worth saving, so a partial record beats none.
+                rng_state["cuda"] = torch.cuda.get_rng_state_all()
+        state["engine.rng_state"] = rng_state
         return state
 
     def load_checkpoint_state(self, state: dict[str, Any] | None) -> None:
@@ -202,6 +222,24 @@ class TrainingEngine:
         restored = state.get("engine.global_step")
         if restored is not None:
             self.global_step = int(restored)
+
+        # Continue the saved random stream instead of replaying it. A checkpoint
+        # written before this key existed simply has none, and the run keeps the
+        # freshly-seeded stream — the old behaviour, not an error.
+        saved_rng = state.get("engine.rng_state")
+        if saved_rng is not None:
+            cpu_state = saved_rng.get("cpu")
+            if cpu_state is not None:
+                torch.set_rng_state(cpu_state)
+            cuda_states = saved_rng.get("cuda")
+            if cuda_states is not None and torch.cuda.is_available():
+                try:
+                    torch.cuda.set_rng_state_all(cuda_states)
+                except RuntimeError:  # pragma: no cover - device count changed
+                    self.logger.warning(
+                        "Checkpoint holds CUDA RNG state for a different device count; "
+                        "the resumed run continues from a freshly-seeded CUDA stream."
+                    )
 
         saved_qat = state.get("engine.qat_signature")
         if saved_qat is not None:
