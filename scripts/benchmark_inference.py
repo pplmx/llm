@@ -1,3 +1,4 @@
+import math
 import statistics
 import time
 
@@ -78,9 +79,34 @@ def run_benchmark(
     avg_latency = statistics.mean(latencies)
     avg_tps = statistics.mean(tokens_per_second)
 
+    # Latency TAILS, not just the mean. A mean hides the runs that matter for a
+    # serving decision: a p99 twice the mean is a different product from a tight
+    # distribution with the same average. ROADMAP listed this as the remaining
+    # gap — latency had only an end-to-end mean, no percentiles.
+    #
+    # Percentile method: NEAREST-RANK, so a reported figure is always a latency
+    # that actually occurred. ``statistics.quantiles`` interpolates and can
+    # return values OUTSIDE the sample range — measured on
+    # ``[1.0…1.8, 10.0]`` it gave p95 = 13.69 and p99 = 17.30 from a sample whose
+    # maximum is 10.0. A percentile above the slowest observed run is not a
+    # measurement of anything.
+    def _nearest_rank(values: list[float], pct: float) -> float:
+        ordered = sorted(values)
+        index = max(0, math.ceil(pct / 100 * len(ordered)) - 1)
+        return ordered[index]
+
+    p50_latency = statistics.median(latencies)
+    p95_latency = _nearest_rank(latencies, 95)
+    p99_latency = _nearest_rank(latencies, 99)
+    worst_tps = min(tokens_per_second)
+
     print("\n--- Results ---")
     print(f"Avg Latency: {avg_latency:.4f}s")
+    print(f"P50 Latency: {p50_latency:.4f}s")
+    print(f"P95 Latency: {p95_latency:.4f}s")
+    print(f"P99 Latency: {p99_latency:.4f}s")
     print(f"Avg TPS: {avg_tps:.2f} tokens/s")
+    print(f"Min TPS: {worst_tps:.2f} tokens/s  (the slowest run; lower is worse)")
 
     return avg_latency, avg_tps
 

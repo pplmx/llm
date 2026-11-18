@@ -312,7 +312,9 @@
 - [ ] 性能基准测试和优化 (`scripts/benchmark_inference.py` 已支持 `--attn-impl`，可对同一 serving
       引擎逐实现测量；实测小模型下 `mha` 569-585 tokens/s vs `mla` 416-460 tokens/s。仍缺
       `flash_attn` 一路——本机装不了（`FLASH_ATTN_AVAILABLE is False`），三路对比需要在有 CUDA
-      工具链的主机上建包后补完；延迟侧也仍只有端到端均值，没有分位数)
+      工具链的主机上建包后补完。延迟分位数**已补齐**（P50/P95/P99 + 最慢一轮的 TPS，使用
+      nearest-rank 保证报告值是实际观测到的延迟；`statistics.quantiles` 会插值出超出样本范围的
+      数字，实测 `[1.0…1.8, 10.0]` 给出 p95=13.69/p99=17.30，最大值只有 10.0）
 
 #### 10.2 高级推理优化
 

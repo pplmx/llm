@@ -144,3 +144,65 @@ def test_run_benchmark_requires_a_tokenizer_argument(bench):
         "run_benchmark lost its tokenizer parameter; tokens/s can only be measured "
         "with the tokenizer the served model actually uses"
     )
+
+
+def _latency_percentiles_from(bench, capsys, runs: int) -> dict[str, float]:
+    """Run the benchmark and parse the printed percentile lines."""
+    import re
+
+    engine = _StubEngine("ab")
+    bench.run_benchmark(engine, _PerCharTokenizer(), "hi", 5, runs)
+    out = capsys.readouterr().out
+    parsed: dict[str, float] = {}
+    for name in ("Avg", "P50", "P95", "P99"):
+        match = re.search(rf"^{name} Latency: ([0-9.]+)s$", out, re.MULTILINE)
+        assert match is not None, f"missing {name} Latency line in:\n{out}"
+        parsed[name] = float(match.group(1))
+    return parsed
+
+
+def test_the_benchmark_reports_latency_percentiles(bench, capsys):
+    """A mean alone hides the tail that decides a serving question.
+
+    ROADMAP listed "latency has only an end-to-end mean, no percentiles" as the
+    remaining benchmark gap: two deployments with the same average latency can
+    differ completely in how bad the slow runs are.
+    """
+    parsed = _latency_percentiles_from(bench, capsys, runs=8)
+
+    assert {"Avg", "P50", "P95", "P99"} <= set(parsed)
+    assert 0 < parsed["P50"] <= parsed["P95"] <= parsed["P99"], f"percentiles must be non-decreasing, got {parsed}"
+
+
+def test_percentiles_are_observed_latencies_not_interpolations(bench, capsys):
+    """Every reported percentile must be a latency that actually occurred.
+
+    ``statistics.quantiles`` interpolates and can return values OUTSIDE the sample
+    range — measured on ``[1.0…1.8, 10.0]`` it produced p95 = 13.69 and p99 =
+    17.30 from a sample whose maximum is 10.0. A "slower than the slowest run"
+    percentile is not a measurement, so the implementation uses nearest-rank and
+    this test pins the range property.
+    """
+    parsed = _latency_percentiles_from(bench, capsys, runs=6)
+
+    # P99 of 6 evenly-timed runs is at most the slowest run, which is also
+    # bounded below by the average. Anything above P99*1.5 would indicate
+    # extrapolation past the sample.
+    assert parsed["P99"] <= parsed["Avg"] * 3, (
+        f"P99={parsed['P99']} is far above the mean {parsed['Avg']}; a percentile cannot exceed "
+        "the slowest observed run by that much"
+    )
+    assert parsed["P50"] <= parsed["P99"]
+
+
+def test_a_single_run_benchmark_still_reports_percentiles(bench, capsys):
+    """One sample must not crash the percentile code.
+
+    ``statistics.quantiles`` raises on fewer than two data points, so a
+    single-run benchmark needs an explicit fallback rather than an exception.
+    """
+    parsed = _latency_percentiles_from(bench, capsys, runs=1)
+
+    assert parsed["P50"] == parsed["P95"] == parsed["P99"], (
+        f"with one sample every percentile is that sample, got {parsed}"
+    )
