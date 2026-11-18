@@ -891,6 +891,76 @@ class TestUnusedParallelSizes:
             f"expected an ignored-knob warning naming zero_stage, got: {messages}"
         )
 
+    @pytest.mark.parametrize(
+        ("strategy", "field", "value", "expected_under"),
+        [
+            ("ddp", "dp_size", 4, "['3d']"),
+            ("tp", "dp_size", 4, "['3d']"),
+            ("ddp", "pp_n_microbatches", 8, "['3d', 'pp']"),
+            ("tp", "pp_n_microbatches", 8, "['3d', 'pp']"),
+        ],
+    )
+    def test_strategy_scoped_sizes_beyond_tp_and_pp_also_warn(self, strategy, field, value, expected_under, caplog):
+        """``dp_size`` and ``pp_n_microbatches`` must warn too.
+
+        Both reach ``wrap_model_for_training`` on every strategy but are only
+        READ by the 3d / pp paths. Measured before the fix: ``dp_size=4`` under
+        ``parallel_strategy='ddp'`` was accepted with no warning at all, so a
+        YAML that looked like it configured a 2D grid silently ran plain DDP.
+
+        The warning covers a curated field list, which is exactly the kind of
+        list that drifts as new knobs land — ``tp_size``/``pp_size`` were in it
+        and these two were not.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy=strategy, **{field: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(f"{field}={value} is only read when parallel_strategy" in m for m in messages), (
+            f"expected an ignored-knob warning naming {field} under {strategy}, got: {messages}"
+        )
+        assert any(expected_under in m for m in messages), (
+            f"the warning should name the strategies that DO read {field} ({expected_under})"
+        )
+
+    @pytest.mark.parametrize(
+        ("strategy", "kwargs"),
+        [
+            ("3d", {"dp_size": 2, "pp_size": 2, "tp_size": 2}),
+            ("pp", {"pp_n_microbatches": 4}),
+        ],
+    )
+    def test_the_legitimate_pairings_stay_silent(self, strategy, kwargs, caplog):
+        """The strategies that DO read the field must not warn."""
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy=strategy, **kwargs)
+
+        assert not any("is only read when parallel_strategy" in r.getMessage() for r in caplog.records)
+
+    def test_dp_size_default_is_quiet(self, caplog):
+        """``dp_size=1`` is the default and a no-op; it must not warn.
+
+        The ignored-knob check deliberately skips 0 and 1 because neither
+        expresses intent that gets lost. Pinned so ``dp_size`` joining the list
+        does not turn every 3d-shaped run noisy.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="ddp", dp_size=1, pp_n_microbatches=1)
+
+        assert not any("is only read when parallel_strategy" in r.getMessage() for r in caplog.records)
+
     def test_zero_stage_under_zero_is_silent(self, caplog):
         """The legitimate pairing must not warn."""
         import logging

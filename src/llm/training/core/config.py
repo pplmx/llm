@@ -819,6 +819,14 @@ class DistributedConfig(BaseSettings):
             # under another strategy looks like it enabled gradient sharding and
             # does not.
             "zero_stage": {"zero"},
+            # `dp_size` reaches `wrap_model_for_training` on every strategy but
+            # is only READ by `three_d_layout` (3d). Measured: `dp_size=4` under
+            # `parallel_strategy='ddp'` was accepted with no warning, so a YAML
+            # that looked like it configured a 2D grid silently ran plain DDP —
+            # the same class as `tp_size`/`pp_size`, which is why they are here.
+            "dp_size": {"3d"},
+            # `pp_n_microbatches` is only consumed by the pipeline schedule.
+            "pp_n_microbatches": {"pp", "3d"},
         }
         for size_field, strategies in valid_under.items():
             if size_field not in explicitly_set:
