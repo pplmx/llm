@@ -44,7 +44,18 @@ class HFTokenizer:
 
     @property
     def vocab_size(self) -> int:
-        return self._tokenizer.vocab_size
+        """Size of the id space the tokenizer can actually emit.
+
+        ``len(self._tokenizer)`` rather than ``.vocab_size``: the latter counts
+        only the BASE vocabulary and excludes tokens added after loading
+        (special tokens registered by ``add_tokens``, which is what real
+        checkpoints routinely carry). Measured on a tiny WordLevel tokenizer:
+        after ``add_tokens(["<NEW>"])`` the wrapper reported ``vocab_size == 3``
+        while ``len(tokenizer) == 4`` and ``encode("<NEW>")`` returned id 3 — so
+        a model sized from ``vocab_size`` would be built with an embedding that
+        cannot index its own tokenizer's output.
+        """
+        return len(self._tokenizer)
 
     @property
     def pad_token_id(self) -> int | None:

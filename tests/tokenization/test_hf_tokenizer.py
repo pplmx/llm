@@ -197,3 +197,34 @@ class TestSavePretrained:
         reloaded = HFTokenizer.from_pretrained(str(out))
         assert reloaded.vocab_size == tokenizer.vocab_size
         assert reloaded.encode("hello world") == tokenizer.encode("hello world")
+
+
+def test_vocab_size_counts_tokens_added_after_loading(tokenizer_dir: pathlib.Path):
+    """``vocab_size`` must cover every id the tokenizer can EMIT.
+
+    It used to return ``self._tokenizer.vocab_size``, which is the BASE
+    vocabulary and excludes tokens registered after loading — the special tokens
+    real checkpoints routinely carry. Measured on a tiny WordLevel tokenizer:
+    after ``add_tokens(["<NEW>"])`` the wrapper reported ``vocab_size == 3``
+    while ``len(tokenizer) == 4`` and ``encode("<NEW>")`` returned id 3, so a
+    model sized from ``vocab_size`` would be built with an embedding that cannot
+    index its own tokenizer's output.
+    """
+    tokenizer = HFTokenizer(str(tokenizer_dir))
+    before = tokenizer.vocab_size
+
+    tokenizer._tokenizer.add_tokens(["<NEW>"])
+    new_id = tokenizer.encode("<NEW>")[0]
+
+    assert tokenizer.vocab_size == before + 1, (
+        "vocab_size still reports the base vocabulary; added tokens are invisible to it"
+    )
+    assert tokenizer.vocab_size > new_id, (
+        f"vocab_size={tokenizer.vocab_size} does not cover the id the tokenizer emits ({new_id})"
+    )
+
+
+def test_vocab_size_matches_the_base_vocabulary_without_added_tokens(tokenizer_dir: pathlib.Path):
+    """With no added tokens the two notions agree, so the fix changes nothing."""
+    tokenizer = HFTokenizer(str(tokenizer_dir))
+    assert tokenizer.vocab_size == len(tokenizer._tokenizer)
