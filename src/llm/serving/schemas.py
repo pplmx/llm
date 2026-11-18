@@ -540,3 +540,178 @@ class ChatCompletionChunk(BaseModel):
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str = "llm"
     choices: list[ChatCompletionChunkChoice] = Field(..., description="List of chunk choices.")
+
+
+# --- OpenAI Responses API (``POST /v1/responses``) -------------------------
+#
+# OpenAI's current recommendation: the Responses API supersedes chat
+# completions for new integrations. The shape differs in ways that matter, so
+# this is modelled on the SDK's own types rather than reusing the chat models:
+#
+#   * ``input`` (string or message list) replaces ``messages``;
+#   * ``instructions`` replaces the ``system`` role message;
+#   * ``max_output_tokens`` replaces ``max_tokens`` / ``max_completion_tokens``;
+#   * the assistant text comes back in ``output`` as a list of items, each with
+#     a ``content`` list — not in ``choices[0].message.content``;
+#   * the response carries ``status`` and, when truncated, ``incomplete_details``
+#     with a ``reason`` of ``"max_output_tokens"`` instead of ``finish_reason``.
+#
+# Reference: ``openai.types.responses`` in the installed SDK.
+
+
+class ResponsesInputMessage(BaseModel):
+    """One input item for the Responses API."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    role: Literal["system", "developer", "user", "assistant"] = Field(..., description="Role of the message author.")
+    content: str = Field(
+        ...,
+        max_length=MAX_PROMPT_CHARS,
+        description=f"Text content of the item (max {MAX_PROMPT_CHARS} characters).",
+    )
+
+
+class ResponsesUsage(BaseModel):
+    """Token usage, in the Responses API's field names."""
+
+    input_tokens: int = Field(..., description="Tokens in the prompt.")
+    input_tokens_details: dict[str, int] = Field(default_factory=lambda: {"cached_tokens": 0})
+    output_tokens: int = Field(..., description="Tokens generated.")
+    output_tokens_details: dict[str, int] = Field(default_factory=lambda: {"reasoning_tokens": 0})
+    total_tokens: int = Field(..., description="Sum of input and output tokens.")
+
+
+class ResponsesOutputText(BaseModel):
+    """A text part inside an output message item."""
+
+    type: Literal["output_text"] = "output_text"
+    text: str = Field(..., description="The generated text.")
+    annotations: list[Any] = Field(default_factory=list, description="Always empty (no file/web search).")
+    logprobs: list[Any] = Field(default_factory=list, description="Always empty (not implemented).")
+
+
+class ResponsesOutputMessage(BaseModel):
+    """One message item in ``response.output``."""
+
+    type: Literal["message"] = "message"
+    id: str = Field(default_factory=lambda: f"msg_{uuid.uuid4().hex[:12]}")
+    status: Literal["completed", "incomplete"] = "completed"
+    role: Literal["assistant"] = "assistant"
+    content: list[ResponsesOutputText] = Field(..., description="The message's content parts.")
+
+
+class ResponsesIncompleteDetails(BaseModel):
+    """Why a response stopped before finishing."""
+
+    reason: Literal["max_output_tokens", "content_filter"] = Field(
+        ..., description="``max_output_tokens`` when the token budget ran out."
+    )
+
+
+class ResponsesRequest(BaseModel):
+    """OpenAI-compatible Responses API request."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field("llm", description="Model ID (ignored, for compatibility).")
+    input: str | list[ResponsesInputMessage] = Field(
+        ...,
+        description=(
+            "The prompt: a plain string, or a list of message items. A string is treated as a single user message."
+        ),
+    )
+    instructions: str | None = Field(
+        None,
+        max_length=MAX_PROMPT_CHARS,
+        description="System-level instructions; equivalent to a leading system message.",
+    )
+    max_output_tokens: int | None = Field(
+        None,
+        ge=1,
+        le=4096,
+        description="Upper bound on generated tokens. None means the server default.",
+    )
+    temperature: float | None = Field(None, ge=0.0, le=2.0, description="Sampling temperature.")
+    top_p: float | None = Field(None, gt=0.0, le=1.0, description="Nucleus sampling parameter.")
+    stream: bool = Field(False, description="Whether to stream the response as SSE events.")
+
+    # Declared-but-unsupported knobs. Silently dropping them would return a 200
+    # whose behaviour differs from what the client asked for, so they are
+    # refused by name — the same contract as the chat/completions schemas.
+    tools: list[Any] | None = Field(None, description="UNSUPPORTED: tool calling.")
+    tool_choice: Any | None = Field(None, description="UNSUPPORTED: tool choice.")
+    previous_response_id: str | None = Field(None, description="UNSUPPORTED: response chaining.")
+    store: bool | None = Field(None, description="UNSUPPORTED: server-side response storage.")
+    background: bool | None = Field(None, description="UNSUPPORTED: background execution.")
+    include: list[str] | None = Field(None, description="UNSUPPORTED: extra output fields.")
+    reasoning: Any | None = Field(None, description="UNSUPPORTED: reasoning configuration.")
+    text: Any | None = Field(None, description="UNSUPPORTED: structured-output formats.")
+    truncation: str | None = Field(None, description="UNSUPPORTED: context truncation strategies.")
+
+    @field_validator("input")
+    @classmethod
+    def _check_input(cls, v: str | list[ResponsesInputMessage]) -> str | list[ResponsesInputMessage]:
+        if isinstance(v, str):
+            if not v:
+                raise ValueError("input must be a non-empty string")
+            if len(v) > MAX_PROMPT_CHARS:
+                raise ValueError(f"input string may be at most {MAX_PROMPT_CHARS} characters")
+            return v
+        if not v:
+            raise ValueError("input must be a non-empty string or a non-empty list of messages")
+        if len(v) > MAX_MESSAGES:
+            raise ValueError(f"input may contain at most {MAX_MESSAGES} items")
+        return v
+
+    @model_validator(mode="after")
+    def _reject_unsupported_knobs(self) -> ResponsesRequest:
+        """Refuse knobs this server cannot honour, instead of ignoring them."""
+        unsupported = {
+            "tools": self.tools,
+            "tool_choice": self.tool_choice,
+            "previous_response_id": self.previous_response_id,
+            "store": self.store,
+            "background": self.background,
+            "include": self.include,
+            "reasoning": self.reasoning,
+            "text": self.text,
+            "truncation": self.truncation,
+        }
+        requested = [name for name, value in unsupported.items() if value is not None and value is not False]
+        if requested:
+            raise ValueError(
+                f"unsupported Responses API parameter(s): {', '.join(sorted(requested))}. "
+                "This server generates plain text and does not implement tool calling, response "
+                "storage, background execution, reasoning controls, or structured output; remove "
+                "the parameter instead of having it silently ignored."
+            )
+        return self
+
+
+class ResponsesResponse(BaseModel):
+    """OpenAI-compatible Responses API response object."""
+
+    id: str = Field(default_factory=lambda: f"resp_{uuid.uuid4().hex[:16]}")
+    object: Literal["response"] = "response"
+    created_at: int = Field(default_factory=lambda: int(time.time()))
+    model: str = "llm"
+    status: Literal["completed", "incomplete", "failed"] = "completed"
+    output: list[ResponsesOutputMessage] = Field(..., description="The generated items.")
+    output_text: str = Field(
+        "",
+        description=(
+            "Convenience mirror of the generated text. The SDK exposes this as a computed "
+            "property; the server includes it so that plain JSON clients (and ``jq``) can read "
+            "the text without walking the output items."
+        ),
+    )
+    usage: ResponsesUsage = Field(..., description="Token usage.")
+    incomplete_details: ResponsesIncompleteDetails | None = Field(
+        None, description="Present only when ``status`` is ``incomplete``."
+    )
+    temperature: float | None = None
+    top_p: float | None = None
+    max_output_tokens: int | None = None
+    instructions: str | None = None
+    error: Any | None = Field(None, description="Always null: failures are HTTP error responses.")

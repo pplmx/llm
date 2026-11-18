@@ -37,7 +37,7 @@
     - **LoRA**: Low-rank adaptation with merge/unmerge support.
     - **QLoRA**: 4-bit NF4 quantized base + fp16 LoRA adapters (~4x memory reduction).
 - **Inference & Serving**:
-    - **OpenAI-Compatible API**: `/v1/chat/completions` + legacy `/v1/completions` endpoints work with the OpenAI SDK and LangChain/LlamaIndex.
+    - **OpenAI-Compatible API**: `/v1/responses` (OpenAI's current recommendation), `/v1/chat/completions`, and legacy `/v1/completions` all work with the OpenAI SDK, LangChain, and LlamaIndex.
     - **KVCache**: Pre-allocated cache for efficient autoregressive generation.
     - Streaming support (Server-Sent Events).
     - Prometheus metrics & API key authentication.

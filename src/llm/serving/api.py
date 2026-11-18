@@ -50,6 +50,7 @@ from llm.serving.routers import chat as chat_router
 from llm.serving.routers import completions as completions_router
 from llm.serving.routers import generate as generate_router
 from llm.serving.routers import health as health_router
+from llm.serving.routers import responses as responses_router
 
 # Backwards-compat re-exports. The auth, chat-template, middleware, and
 # CLI helpers moved out of ``llm.serving.api`` during T2 #16, but their
@@ -176,6 +177,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, Any]:
     generate_router.configure(config, generation_service, inference_semaphore, METRICS)
     chat_router.configure(config, inference_semaphore, METRICS)
     completions_router.configure(config, inference_semaphore, METRICS)
+    responses_router.configure(config, inference_semaphore, METRICS)
 
     _log_server_config(generation_service, config)
 
@@ -266,6 +268,7 @@ app.include_router(health_router.router)
 app.include_router(generate_router.router)
 app.include_router(chat_router.router)
 app.include_router(completions_router.router)
+app.include_router(responses_router.router)
 
 # Prometheus RED metrics + custom /metrics endpoint.
 #
