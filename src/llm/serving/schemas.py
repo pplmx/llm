@@ -223,6 +223,49 @@ class ChatMessage(BaseModel):
     )
 
 
+class ChatJSONSchemaSpec(BaseModel):
+    """The inner ``json_schema`` object of a chat ``response_format``.
+
+    Note the shape difference from the Responses API: chat NESTS these under
+    ``json_schema``, while ``text.format`` puts ``name``/``schema`` at the top
+    level. Both are OpenAI's own spellings; a shared model would have to pretend
+    one of them is wrong.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(..., min_length=1, max_length=64, description="Name of the response format.")
+    schema_: dict[str, Any] = Field(..., alias="schema", description="JSON Schema the reply must match.")
+    description: str | None = Field(None, description="Guidance for the model.")
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
+class ChatResponseFormatJSONSchema(BaseModel):
+    """``response_format`` in schema mode."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["json_schema"] = "json_schema"
+    json_schema: ChatJSONSchemaSpec = Field(..., description="The schema specification.")
+
+
+class ChatResponseFormatJSONObject(BaseModel):
+    """``response_format`` in plain-JSON mode."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["json_object"] = "json_object"
+
+
+class ChatResponseFormatText(BaseModel):
+    """``response_format`` in plain-text mode (the default)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["text"] = "text"
+
+
 class ChatCompletionStreamOptions(BaseModel):
     """``stream_options`` — which extras to include on a streamed response."""
 
@@ -310,7 +353,16 @@ class ChatCompletionRequest(BaseModel):
     # ``model_config`` note above).
     n: int | None = Field(None, description="UNSUPPORTED: multiple completions per request.")
     seed: int | None = Field(None, description="UNSUPPORTED: sampling reproducibility.")
-    response_format: dict[str, Any] | None = Field(None, description="UNSUPPORTED: structured output.")
+    response_format: ChatResponseFormatText | ChatResponseFormatJSONObject | ChatResponseFormatJSONSchema | None = (
+        Field(
+            None,
+            discriminator="type",
+            description=(
+                "Output format: text (default), json_object, or json_schema. The logits are masked by a "
+                "JSON grammar when either of the last two is requested."
+            ),
+        )
+    )
     stream_options: ChatCompletionStreamOptions | None = Field(
         None, description="Which extras to include on a streamed response."
     )
@@ -339,7 +391,6 @@ class ChatCompletionRequest(BaseModel):
         unsupported = {
             "n": self.n,
             "seed": self.seed,
-            "response_format": self.response_format,
             "tools": self.tools,
         }
         requested = [name for name, value in unsupported.items() if value is not None and value != 1]

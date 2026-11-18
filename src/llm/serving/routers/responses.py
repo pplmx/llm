@@ -127,30 +127,24 @@ def _to_chat_messages(request: ResponsesRequest) -> list[_ChatMessage]:
 def _structured_output_spec(request: ResponsesRequest) -> tuple[str | None, dict | None, str | None]:
     """Read ``text.format`` and return (instruction, schema, name) for the run.
 
-    ``text.format`` has three modes:
-      * ``text`` (the default) — plain text, nothing to do;
-      * ``json_object`` — valid JSON, no shape requirement: the grammar alone
-        enforces it, so a prompt-level nudge is all that is needed;
-      * ``json_schema`` — valid JSON *and* a shape: the schema is rendered as an
-        instruction AND checked after generation.
-
-    Returns ``(instruction, schema, name)`` where ``schema`` is None unless the
-    caller asked for ``json_schema``.
+    ``text.format`` has three modes: ``text`` (the default), ``json_object``
+    (valid JSON, no shape requirement) and ``json_schema`` (valid JSON *and* a
+    shape). The instruction text comes from the shared helper in
+    ``json_grammar`` so the chat endpoint steers the model identically.
     """
-    from llm.serving.json_grammar import schema_to_instruction
+    from llm.serving.json_grammar import instruction_for_mode
 
     text_config = request.text
     if text_config is None:
         return None, None, None
     fmt = text_config.format
-    if fmt.type == "json_schema":
-        return schema_to_instruction(fmt.name, fmt.schema_, fmt.description), fmt.schema_, fmt.name
     if fmt.type == "json_object":
+        return instruction_for_mode("json_object", name=None, schema=None), None, None
+    if fmt.type == "json_schema":
         return (
-            "Respond with a single JSON value only. Do not wrap it in markdown fences and do "
-            "not add any prose before or after it.",
-            None,
-            None,
+            instruction_for_mode("json_schema", name=fmt.name, schema=fmt.schema_, description=fmt.description),
+            fmt.schema_,
+            fmt.name,
         )
     return None, None, None
 
@@ -160,14 +154,17 @@ def _build_constrained_processor(request: ResponsesRequest):
 
     Returns ``(processor, schema, name)``. The processor is only created when the
     vocabulary can be mapped id -> text: without that mapping there is nothing to
-    mask against, and the caller falls back to prompting + the post-check (the
-    behaviour before the hook existed).
+    mask against, and the caller falls back to prompting + the post-check.
     """
-    from llm.serving.json_grammar import GrammarConstrainedProcessor
+    from llm.serving.json_grammar import build_processor_for_mode
 
     text_config = request.text
     if text_config is None or text_config.format.type == "text":
         return None, None, None
+
+    fmt = text_config.format
+    schema = getattr(fmt, "schema_", None)
+    name = getattr(fmt, "name", None)
 
     service = _require_generation_service()
     tokenizer = getattr(service, "tokenizer", None)
@@ -178,14 +175,11 @@ def _build_constrained_processor(request: ResponsesRequest):
             "tokenizer %s exposes no id->token map; structured output will prompt for JSON but cannot mask the logits",
             type(tokenizer).__name__,
         )
-        fmt = text_config.format
-        return None, getattr(fmt, "schema_", None), getattr(fmt, "name", None)
+        return None, schema, name
 
-    fmt = text_config.format
-    schema = getattr(fmt, "schema_", None)
-    name = getattr(fmt, "name", None)
-    processor = GrammarConstrainedProcessor(
-        to_text,
+    processor = build_processor_for_mode(
+        fmt.type,
+        id_to_token=to_text,
         eos_id=getattr(tokenizer, "eos_token_id", None),
         vocab_size=getattr(tokenizer, "vocab_size", None),
     )

@@ -408,3 +408,101 @@ def test_the_processor_is_optional_and_changes_nothing_when_absent():
     from llm.generation.backends import GenerationConfig
 
     assert GenerationConfig().logits_processor is None
+
+
+# --- response_format on /v1/chat/completions -------------------------------
+#
+# Chat spells structured output differently from the Responses API: it NESTS the
+# spec under ``json_schema``. Both are OpenAI's own shapes, so both are lowered
+# to one (instruction, schema, name) triple and share the grammar and processor.
+
+
+def test_chat_response_format_json_schema_is_parsed():
+    from llm.serving.schemas import ChatCompletionRequest
+
+    request = ChatCompletionRequest(
+        messages=[{"role": "user", "content": "hi"}],
+        response_format={"type": "json_schema", "json_schema": {"name": "P", "schema": _SCHEMA}},
+    )
+    assert request.response_format.type == "json_schema"
+    assert request.response_format.json_schema.name == "P"
+    assert request.response_format.json_schema.schema_ == _SCHEMA
+
+
+def test_chat_response_format_is_not_refused_as_unsupported():
+    """It used to be on the unsupported list; structured output is real now."""
+    from llm.serving.schemas import ChatCompletionRequest
+
+    for fmt in ({"type": "json_object"}, {"type": "text"}):
+        request = ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], response_format=fmt)
+        assert request.response_format.type == fmt["type"]
+
+
+@pytest.mark.parametrize(
+    ("fmt", "expect_instruction", "expect_schema"),
+    [
+        (None, False, False),
+        ({"type": "text"}, False, False),
+        ({"type": "json_object"}, True, False),
+        ({"type": "json_schema", "json_schema": {"name": "P", "schema": {"type": "object"}}}, True, True),
+    ],
+)
+def test_chat_lowers_response_format_to_one_spec(fmt, expect_instruction, expect_schema):
+    """Every mode must resolve to the same triple the Responses API uses.
+
+    ``text`` is a no-op, ``json_object`` asks for JSON without a schema, and
+    ``json_schema`` carries both — if these diverged, the two endpoints would
+    constrain differently for the same user intent.
+    """
+    from llm.serving.routers.chat import _response_format_spec
+    from llm.serving.schemas import ChatCompletionRequest
+
+    request = ChatCompletionRequest(
+        messages=[{"role": "user", "content": "hi"}],
+        **({} if fmt is None else {"response_format": fmt}),
+    )
+    instruction, schema, _name = _response_format_spec(request)
+    assert (instruction is not None) is expect_instruction
+    assert (schema is not None) is expect_schema
+
+
+def test_chat_and_responses_agree_on_the_instruction():
+    """The same schema must produce the SAME instruction text on both endpoints.
+
+    They differ only in where the schema sits in the request; the model sees one
+    prompt either way, and two renderings would mean two behaviours.
+    """
+    from llm.serving.routers.chat import _response_format_spec
+    from llm.serving.routers.responses import _structured_output_spec
+    from llm.serving.schemas import ChatCompletionRequest, ResponsesRequest
+
+    schema = {"type": "object", "properties": {"a": {"type": "string"}}, "required": ["a"]}
+
+    chat_instruction, chat_schema, chat_name = _response_format_spec(
+        ChatCompletionRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            response_format={"type": "json_schema", "json_schema": {"name": "P", "schema": schema}},
+        )
+    )
+    responses_instruction, responses_schema, responses_name = _structured_output_spec(
+        ResponsesRequest(input="hi", text={"format": {"type": "json_schema", "name": "P", "schema": schema}})
+    )
+
+    assert chat_schema == responses_schema == schema
+    assert chat_name == responses_name == "P"
+    assert chat_instruction == responses_instruction
+
+
+def test_the_json_object_instruction_is_shared_between_endpoints():
+    """``json_object`` must render identically too."""
+    from llm.serving.routers.chat import _response_format_spec
+    from llm.serving.routers.responses import _structured_output_spec
+    from llm.serving.schemas import ChatCompletionRequest, ResponsesRequest
+
+    chat_instruction, _, _ = _response_format_spec(
+        ChatCompletionRequest(messages=[{"role": "user", "content": "hi"}], response_format={"type": "json_object"})
+    )
+    responses_instruction, _, _ = _structured_output_spec(
+        ResponsesRequest(input="hi", text={"format": {"type": "json_object"}})
+    )
+    assert chat_instruction == responses_instruction

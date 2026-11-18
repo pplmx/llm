@@ -605,3 +605,45 @@ class GrammarConstrainedProcessor:
         """True when ``text`` is already a complete JSON document."""
         self._advance_to(text)
         return self._grammar.accept()
+
+
+# --- request-shape adapters ------------------------------------------------
+#
+# The two OpenAI surfaces spell structured output differently:
+#   * chat:      {"type": "json_schema", "json_schema": {"name", "schema", ...}}
+#   * responses: {"format": {"type": "json_schema", "name", "schema", ...}}
+# Both mean the same thing, so they are lowered to ONE spec here and the routes
+# share the grammar, the processor and the prompting.
+
+
+def build_processor_for_mode(
+    mode: str,
+    *,
+    id_to_token: dict[int, str],
+    eos_id: int | None,
+    vocab_size: int | None,
+) -> GrammarConstrainedProcessor | None:
+    """A processor for ``mode`` (``"text"`` / ``"json_object"`` / ``"json_schema"``).
+
+    ``None`` means "do not constrain": plain text, or no vocabulary mapping to
+    mask against. The schema is NOT a parameter because the grammar enforces JSON
+    SYNTAX only — structural constraints are the follow-up described in ADR-017,
+    and the schema is checked after generation instead.
+    """
+    if mode == "text" or not id_to_token:
+        return None
+    return GrammarConstrainedProcessor(id_to_token, eos_id=eos_id, vocab_size=vocab_size)
+
+
+def instruction_for_mode(
+    mode: str, *, name: str | None, schema: dict | None, description: str | None = None
+) -> str | None:
+    """The prompt text that steers the model toward ``mode``, or None for text."""
+    if mode == "text":
+        return None
+    if mode == "json_schema" and schema is not None:
+        return schema_to_instruction(name or "response", schema, description)
+    return (
+        "Respond with a single JSON value only. Do not wrap it in markdown fences and do "
+        "not add any prose before or after it."
+    )

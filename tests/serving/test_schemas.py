@@ -157,7 +157,6 @@ class TestUnsupportedChatKnobs:
         [
             ("n", 3),
             ("seed", 42),
-            ("response_format", {"type": "json_object"}),
             ("tools", [{"type": "function"}]),
         ],
     )

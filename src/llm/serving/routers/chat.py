@@ -8,7 +8,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
@@ -22,6 +22,7 @@ from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError,
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.routers.generate import (
     _drive_sync_iterator,
+    _require_generation_service,
     _sync_generate,
     _sync_stream_generate,
     _token_count,
@@ -39,6 +40,7 @@ from llm.serving.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
     ChatCompletionUsage,
+    ChatMessage,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,48 @@ def configure(
         metrics = metrics_
 
 
+def _response_format_spec(request: ChatCompletionRequest) -> tuple[str | None, dict | None, str | None]:
+    """Read ``response_format`` and return (instruction, schema, name).
+
+    Chat nests the schema under ``json_schema`` while the Responses API puts
+    ``name``/``schema`` at the top level; both are lowered to the same
+    (instruction, schema, name) triple so the two endpoints constrain identically.
+    """
+    from llm.serving.json_grammar import instruction_for_mode
+
+    fmt = request.response_format
+    if fmt is None or fmt.type == "text":
+        return None, None, None
+    if fmt.type == "json_object":
+        return instruction_for_mode("json_object", name=None, schema=None), None, None
+    spec = fmt.json_schema
+    return (
+        instruction_for_mode("json_schema", name=spec.name, schema=spec.schema_, description=spec.description),
+        spec.schema_,
+        spec.name,
+    )
+
+
+def _response_format_processor(request: ChatCompletionRequest):
+    """A JSON-grammar logits processor for ``response_format``, or None."""
+    from llm.serving.json_grammar import build_processor_for_mode
+
+    fmt = request.response_format
+    if fmt is None or fmt.type == "text":
+        return None
+    service = _require_generation_service()
+    tokenizer = getattr(service, "tokenizer", None)
+    to_text = getattr(tokenizer, "itos", None)
+    if not isinstance(to_text, dict) or not to_text:
+        return None
+    return build_processor_for_mode(
+        fmt.type,
+        id_to_token=to_text,
+        eos_id=getattr(tokenizer, "eos_token_id", None),
+        vocab_size=getattr(tokenizer, "vocab_size", None),
+    )
+
+
 @router.post("/v1/chat/completions", response_model=ChatCompletionResponse)
 async def chat_completions(
     request: ChatCompletionRequest,
@@ -88,11 +132,19 @@ async def chat_completions(
     _api_key: Annotated[str, Depends(get_api_key)],
 ) -> ChatCompletionResponse | StreamingResponse:
     """OpenAI-compatible chat completions endpoint."""
+    messages = list(request.messages)
+    format_instruction, _format_schema, _format_name = _response_format_spec(request)
+    if format_instruction:
+        # Appended as a final system message so it is the LAST thing the model
+        # reads before generating — the position instruction-following models
+        # weight most.
+        messages = [*messages, ChatMessage(role="system", content=format_instruction)]
     prompt = messages_to_prompt(
-        request.messages,
+        messages,
         message_template=config_.chat_message_template,
         generation_prefix=config_.chat_generation_prefix,
     )
+    _format_processor = _response_format_processor(request)
     # ``presence_penalty`` flows through its own kwarg to the service —
     # the OpenAI chat endpoint does not expose ``repetition_penalty``,
     # so the legacy ``1.0 + presence_penalty`` alias was removed in
@@ -116,6 +168,7 @@ async def chat_completions(
                 request.frequency_penalty,
                 request.presence_penalty,
                 request.logit_bias,
+                logits_processor=_format_processor,
             ),
             media_type="text/event-stream",
         )
@@ -146,6 +199,7 @@ async def chat_completions(
                             presence_penalty=request.presence_penalty,
                             logit_bias=request.logit_bias,
                             stop=request.stop,
+                            logits_processor=_format_processor,
                         )
         except TimeoutError as exc:
             t.set_status(504)
@@ -236,6 +290,7 @@ async def _chat_stream_generator(
     frequency_penalty: float,
     presence_penalty: float,
     logit_bias: dict[str, float] | None,
+    logits_processor: Any = None,
 ) -> AsyncGenerator[str]:
     """Generate SSE stream for chat completions."""
     completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
@@ -267,6 +322,7 @@ async def _chat_stream_generator(
                         presence_penalty=presence_penalty,
                         logit_bias=logit_bias,
                         stop=request.stop,
+                        logits_processor=logits_processor,
                     )
 
                     # Every generation backend's ``stream()`` yields only
