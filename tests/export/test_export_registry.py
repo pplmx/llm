@@ -123,3 +123,47 @@ class TestExportModelDispatch:
     def test_export_model_unknown_target_raises(self, small_model, tmp_path):
         with pytest.raises(ValueError, match="not found in ExportBackend"):
             export_model("totally_made_up_target", small_model, tmp_path / "x.onnx")
+
+
+class TestGenerationTargetIsRegistered:
+    """``onnx-generation`` must be reachable through the registry, not just a function.
+
+    The two-graph export (ADR-016) writes a DIRECTORY of graphs, which does not
+    fit the "one target, one Path" habit of the other targets. Registering it
+    under its own name — rather than overloading ``onnx`` — keeps each target's
+    behaviour predictable from its name: ``onnx`` writes one file and takes
+    ``input_shape``/``opset_version``, ``onnx-generation`` writes a directory and
+    takes ``prompt_len``/``max_seq_len``. Overloading would make one target's
+    meaning depend on which kwargs happened to be passed.
+    """
+
+    def test_the_target_is_registered(self):
+        ensure_exporters_registered()
+        assert "onnx-generation" in EXPORT_REGISTRY.names(), (
+            f"onnx-generation is not registered; the registry holds {sorted(EXPORT_REGISTRY.names())}"
+        )
+
+    def test_it_writes_both_phase_graphs_into_the_given_directory(self, small_model, tmp_path):
+        """Dispatch through ``export_model`` produces the prefill+decode pair."""
+        out_dir = tmp_path / "generation"
+        result = export_model("onnx-generation", small_model, out_dir, prompt_len=4)
+
+        assert isinstance(result, Path)
+        assert result == out_dir, f"the registry contract returns a Path; got {result}"
+        assert result.is_dir(), f"the generation export writes a directory, got {result}"
+        written = {path.name for path in result.glob("*.onnx")}
+        assert written == {"prefill.onnx", "decode.onnx"}, f"expected both phase graphs, got {sorted(written)}"
+
+    def test_the_directory_name_is_not_forced_to_a_file_extension(self, small_model, tmp_path):
+        """The caller's chosen directory name is used verbatim.
+
+        Every other target appends ``.onnx``/``.gguf`` semantics to a FILE path;
+        this one must not silently treat the last component as a filename, or a
+        caller asking for ``out/`` would get ``out.onnx/prefill.onnx``.
+        """
+        out_dir = tmp_path / "my_generation_bundle"
+        result = export_model("onnx-generation", small_model, out_dir, prompt_len=4)
+
+        assert result == out_dir
+        assert (result / "prefill.onnx").exists()
+        assert not (tmp_path / "my_generation_bundle.onnx").exists()

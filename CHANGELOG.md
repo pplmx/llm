@@ -86,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Two plausible single-graph fixes were measured and are recorded as unnecessary** (docs): an explicit additive mask fixes the SDPA broadcast error only at rank 4 (`[1,1,Sq,Sk]`; rank-2 hits `[1,2,4,4]` vs `[4,2,4,4]`) and matches the `has_past` path bit-exactly, and explicit `position_ids` match the derived `start_pos` bit-exactly — but **neither** makes a single prefill-traced graph decode correctly. ADR-016 records both so the next attempt does not repeat them.
 
+
+- **The two-graph generation export is registered as `onnx-generation`, so it is reachable instead of just importable** (export): `export_decoder_for_generation` landed as a function, but nothing outside its own module could dispatch to it — `EXPORT_REGISTRY` only held `onnx`/`torchscript`/`gguf`, all single-file targets. It now registers under its own name via `build_onnx_generation_exporter`, which returns the written DIRECTORY (the registry contract is `(model, output_path, **kwargs) -> Path`, so the directory path is the Path). Registering separately rather than overloading `onnx` keeps each target's behaviour predictable from its name: `onnx` writes one file and takes `input_shape`/`opset_version`, `onnx-generation` writes a directory and takes `prompt_len`/`max_seq_len`; overloading would make one target's meaning depend on which kwargs happened to be passed. Three tests: the target is registered, dispatch produces both phase graphs, and the caller's directory name is used verbatim rather than treated as a filename (a caller asking for `out/` must not get `out.onnx/prefill.onnx`). Removing the registration turns the first red with `the registry holds ['gguf', 'onnx', 'torchscript']`. The architecture doc's extension-point table now lists the new name in its in-code column.
+
+### Added
+
 ### Added
 
 ### Added

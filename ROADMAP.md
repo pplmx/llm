@@ -521,7 +521,15 @@
 - [x] 实现 TorchScript 导出 (`export/torchscript.py`)
 - [x] 实现 GGUF 导出 (`export/gguf/`: GGUF v3 容器 + F16/F32/Q4_0/Q8_0,
       `llm.export_backends` entry point, ADR-011)
-- [ ] 支持 TensorRT 优化 — 可行性已调查（[ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)）：ONNX 产物 23 个算子全部 TensorRT 原生支持、opset 17、动态轴有效、数值误差 float32 量级，**前置条件具备**。但导出路径强制 `use_cache=False`，解码时每个 token 要重算整个前缀（实测 prompt=8 + 16 新 token 时 **10.3× 冗余**）。因此顺序应为「先让导出支持 KV cache，再谈 TensorRT」，否则优化会被冗余计算吃掉。
+- [ ] 支持 TensorRT 优化 — **前置条件已完成**，剩下的是 engine 构建与动态 shape
+      profile 管理。
+      - 导出路径现已支持 KV cache：`export_decoder_for_generation`（prefill + decode
+      两张图，增量解码与 eager 误差 < 5e-7，registry 名 `onnx-generation`），
+      见 `src/llm/export/onnx.py`。
+      - 可行性详情见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：ONNX 产物
+      23 个算子全部 TensorRT 原生支持、opset 17、动态轴有效、数值误差 float32 量级。
+      - 该冗余问题原文记录为：导出强制 `use_cache=False` 时每个 token 要重算整个
+      前缀，实测 10.3× —— 现已修复。
 - [ ] 探索 Core ML 支持 (iOS 部署) — 同见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：Core ML 仅支持 CPU / Apple Silicon，本机是 A100，**无法在本机验证任何产物**，只能做静态检查；需 Apple 硬件才能推进。
 
 #### 14.3 应用框架集成

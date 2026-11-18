@@ -225,7 +225,7 @@ Third-party and built-in extensions register through a shared **`Registry[T]`**.
 | `llm.models`              | `MODEL_REGISTRY`                   | —                                                                                                             | `decoder`, `regression_mlp`                              |
 | `llm.generation_backends` | `BACKEND_REGISTRY`                 | —                                                                                                             | `eager`, `batched`                                       |
 | `llm.data_sources`        | `SOURCE_REGISTRY`                  | `dedup_local`, `dedup_hf` (compose any inner source with `DedupTextSource`, T3 #39)                           | `local`, `hf`                                            |
-| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx`                                                                                                        | `torchscript`, `gguf` (ADR-011)                          |
+| `llm.export_backends`     | `EXPORT_REGISTRY`                  | `onnx`, `onnx-generation` (prefill+decode pair, ADR-016)                                                      | `torchscript`, `gguf` (ADR-011)                          |
 | `llm.peft_methods`        | `PEFT_REGISTRY`                    | `lora`, `qlora`, `adalora`, `prefix_tuning`, `ia3`, `bitfit`, `adapter`, `pfeiffer_adapter` (T2 PEFT #43–#49) | *(none — the group is declared empty for third parties)* |
 | `llm.tasks`               | hooks via `load_entry_point_hooks` | —                                                                                                             | third-party `TASK_REGISTRY.register(...)`                |
 

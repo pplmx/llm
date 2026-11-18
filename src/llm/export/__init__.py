@@ -27,6 +27,7 @@ from llm.export.registry import (
     EXPORT_REGISTRY,
     ExportBackendFactory,
     build_onnx_exporter,
+    build_onnx_generation_exporter,
     ensure_exporters_registered,
     export_model,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "ExportBackendFactory",
     "build_gguf_exporter",
     "build_onnx_exporter",
+    "build_onnx_generation_exporter",
     "build_torchscript_exporter",
     "ensure_exporters_registered",
     "export_decoder_for_generation",

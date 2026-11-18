@@ -71,6 +71,28 @@ def build_onnx_exporter(
     return export_to_onnx(model, output_path, **kwargs)
 
 
+def build_onnx_generation_exporter(
+    model: nn.Module,
+    output_path: str | Path,
+    **kwargs: Any,
+) -> Path:
+    """Factory for the prefill+decode ONNX pair (ADR-016).
+
+    Unlike every other target this one writes a DIRECTORY of graphs, not a single
+    file: a decoder needs one graph per phase because ``DecoderModel.forward``
+    derives ``start_pos``/``has_past`` from Python values that a tracer freezes
+    along with the traced shape (measured: a prefill-traced graph decodes with
+    ~0.34 error, while each phase's own graph matches eager to <5e-7). The
+    registry contract is ``(model, output_path, **kwargs) -> Path``, so
+    ``output_path`` names the directory and the directory path is returned.
+    """
+    from llm.export.onnx import export_decoder_for_generation
+
+    directory = Path(output_path)
+    export_decoder_for_generation(model, directory, **kwargs)
+    return directory
+
+
 def ensure_exporters_registered() -> None:
     """Idempotently register built-in exporters and load entry points.
 
@@ -96,6 +118,11 @@ def ensure_exporters_registered() -> None:
             return
 
         EXPORT_REGISTRY.register("onnx", build_onnx_exporter)
+        # ADR-016: the cache-aware prefill/decode pair. Separate from "onnx"
+        # because it writes a directory and takes different kwargs
+        # (prompt_len, max_seq_len) -- overloading "onnx" would make its
+        # behaviour depend on kwargs in a way callers cannot predict.
+        EXPORT_REGISTRY.register("onnx-generation", build_onnx_generation_exporter)
         load_entry_point_registry("llm.export_backends", EXPORT_REGISTRY)
         _exporters_registered = True
 
@@ -128,6 +155,7 @@ __all__ = [
     "EXPORT_REGISTRY",
     "ExportBackendFactory",
     "build_onnx_exporter",
+    "build_onnx_generation_exporter",
     "ensure_exporters_registered",
     "export_model",
 ]
