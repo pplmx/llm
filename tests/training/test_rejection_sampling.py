@@ -180,3 +180,54 @@ def test_rejection_sample_datamodule_rejects_nonpositive_num_samples():
     ok.prepare_data()
     ok.setup()
     assert len(ok.train_dataset) > 0
+
+
+def test_an_empty_keep_reports_zero_rather_than_a_misleading_mean():
+    """When nothing clears the filter the kept mean is 0.0, and that is a SENTINEL.
+
+    0.0 is also a legitimate mean reward, so a caller reading only
+    ``kept_mean_reward`` cannot tell "the kept items average 0" from "nothing was
+    kept". The stats therefore have to be read together with
+    ``kept_fraction`` — this pins that pairing so a future change cannot make
+    ``kept_mean_reward`` raise, become NaN, or report the BASE mean (all of which
+    would be silent). The pipeline is protected downstream: the DataModule
+    refuses an empty keep outright, so this value never reaches training.
+    """
+    from llm.data.rejection_sampling import rejection_sample
+
+    scores = torch.tensor([1.0, 2.0, 3.0])
+
+    mask, stats = rejection_sample(scores, threshold=99.0)
+
+    assert int(mask.sum()) == 0
+    assert stats["kept_fraction"] == 0.0
+    # The sentinel, not a NaN and not the base mean.
+    assert stats["kept_mean_reward"] == 0.0
+    assert stats["base_mean_reward"] == pytest.approx(2.0)
+
+
+def test_a_kept_set_that_genuinely_averages_zero_is_distinguishable():
+    """A real zero mean must be told apart from the sentinel by kept_fraction."""
+    from llm.data.rejection_sampling import rejection_sample
+
+    scores = torch.tensor([0.0, 0.0, -1.0])
+
+    _mask, stats = rejection_sample(scores, k=2)
+
+    assert stats["kept_mean_reward"] == 0.0
+    # Same kept mean as the empty case above; only kept_fraction separates them.
+    assert stats["kept_fraction"] == pytest.approx(2 / 3)
+
+
+def test_select_top_k_keeps_everything_when_k_exceeds_the_population():
+    """``k > numel`` clamps to the whole population instead of raising or truncating."""
+    from llm.data.rejection_sampling import rejection_sample, select_top_k
+
+    scores = torch.tensor([1.0, 2.0, 3.0])
+
+    assert select_top_k(scores, 10).all()
+
+    mask, stats = rejection_sample(scores, k=10)
+    assert int(mask.sum()) == 3
+    assert stats["kept_fraction"] == 1.0
+    assert stats["kept_mean_reward"] == pytest.approx(stats["base_mean_reward"])
