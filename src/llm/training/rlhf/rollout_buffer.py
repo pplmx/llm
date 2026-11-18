@@ -237,7 +237,15 @@ class RolloutBuffer:
             if all_advantages.numel() == 0:
                 raise RuntimeError("no advantages computed for normalization")
             mean = all_advantages.mean()
-            std = all_advantages.std() + 1e-8
+            # POPULATION std, not the sample std: ``.std()`` defaults to
+            # ``unbiased=True``, which divides by ``N - 1`` and returns NaN when
+            # the buffer holds a single advantage element (one sample with a
+            # one-token response — the degenerate tail of a small rollout).
+            # Measured: that configuration produced ``advantages == [nan]`` and a
+            # NaN PPO loss, so every gradient in the update was NaN. The same
+            # choice is already made in ``group_advantages`` for GRPO; this makes
+            # the two consistent.
+            std = all_advantages.std(unbiased=False) + 1e-8
             for sample in self.samples:
                 if sample.advantages is None:
                     raise RuntimeError("advantages were not computed")

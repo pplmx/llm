@@ -1907,3 +1907,62 @@ class TestPPOAdvantageWeights:
         flat = _gae_advantages(values, reward, terminal_value=None, gamma=0.0, gae_lambda=0.95)
         assert flat[:-1].abs().max().item() == 0.0
         assert flat[-1].item() == pytest.approx(1.0)
+
+
+class TestAdvantageNormalisationDegenerateSize:
+    """A one-element advantage buffer must not normalise to NaN.
+
+    ``.std()`` defaults to ``unbiased=True``, which divides by ``N - 1``. With a
+    single advantage element — one sample whose response is a single token, the
+    degenerate tail of a small rollout — that is a division by zero: PyTorch
+    returns NaN (and warns), the advantages become ``[nan]``, and the PPO loss,
+    gradients and optimizer step are all NaN. Measured before the fix:
+    ``advantages == [nan]``. The population std makes the degenerate case yield
+    0 (no spread means no advantage signal), which is what
+    ``group_advantages`` already does for GRPO.
+    """
+
+    def test_a_single_advantage_element_normalises_to_zero_not_nan(self):
+        from llm.training.rlhf.rollout_buffer import RolloutBuffer
+
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=1.0, normalize_advantages=True)
+        buffer.add(
+            prompt_ids=torch.tensor([1, 2, 3]),
+            response_ids=torch.tensor([4]),  # ONE token
+            rewards=torch.tensor(1.0),
+            old_log_probs=torch.tensor([-0.5]),
+            values=torch.tensor([0.2]),
+        )
+
+        buffer.compute_advantages()
+
+        advantages = buffer.samples[0].advantages
+        assert advantages is not None
+        assert not torch.isnan(advantages).any(), (
+            f"a single-element advantage buffer normalised to {advantages.tolist()}; "
+            "the normaliser is using the sample std (divide by N-1)"
+        )
+        assert torch.allclose(advantages, torch.zeros_like(advantages))
+
+    def test_the_normalised_advantages_stay_finite_and_standardised(self):
+        """The normal case must remain a proper z-score (mean 0, unit spread)."""
+        from llm.training.rlhf.rollout_buffer import RolloutBuffer
+
+        buffer = RolloutBuffer(gae_lambda=1.0, gamma=0.99, normalize_advantages=True)
+        torch.manual_seed(0)
+        for index in range(4):
+            buffer.add(
+                prompt_ids=torch.tensor([1, 2, 3]),
+                response_ids=torch.tensor([4, 5, 6]),
+                rewards=torch.tensor(float(index)),
+                old_log_probs=torch.full((3,), -0.5),
+                values=torch.randn(3) * 0.1,
+            )
+
+        buffer.compute_advantages()
+        combined = torch.cat([s.advantages for s in buffer.samples])
+
+        assert not torch.isnan(combined).any()
+        assert abs(float(combined.mean())) < 1e-5, f"normalised advantages are not zero-mean: {float(combined.mean())}"
+        # Population std is 1 by construction (before the +1e-8 in the divisor).
+        assert abs(float(combined.std(unbiased=False)) - 1.0) < 1e-3
