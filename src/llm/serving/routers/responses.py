@@ -123,6 +123,50 @@ def _to_chat_messages(request: ResponsesRequest) -> list[_ChatMessage]:
     return messages
 
 
+def _structured_output_spec(request: ResponsesRequest) -> tuple[str | None, dict | None, str | None]:
+    """Read ``text.format`` and return (instruction, schema, name) for the run.
+
+    ``text.format`` has three modes:
+      * ``text`` (the default) — plain text, nothing to do;
+      * ``json_object`` — valid JSON, no shape requirement: the grammar alone
+        enforces it, so a prompt-level nudge is all that is needed;
+      * ``json_schema`` — valid JSON *and* a shape: the schema is rendered as an
+        instruction AND checked after generation.
+
+    Returns ``(instruction, schema, name)`` where ``schema`` is None unless the
+    caller asked for ``json_schema``.
+    """
+    from llm.serving.json_grammar import schema_to_instruction
+
+    text_config = request.text
+    if text_config is None:
+        return None, None, None
+    fmt = text_config.format
+    if fmt.type == "json_schema":
+        return schema_to_instruction(fmt.name, fmt.schema_, fmt.description), fmt.schema_, fmt.name
+    if fmt.type == "json_object":
+        return (
+            "Respond with a single JSON value only. Do not wrap it in markdown fences and do "
+            "not add any prose before or after it.",
+            None,
+            None,
+        )
+    return None, None, None
+
+
+def _check_structured_output(completion: str, schema: dict) -> list[str]:
+    """Problems with ``completion`` as JSON for ``schema``; empty means valid."""
+    import json
+
+    from llm.serving.json_grammar import validate_against_schema
+
+    try:
+        value = json.loads(completion)
+    except (ValueError, TypeError) as exc:
+        return [f"not valid JSON: {exc}"]
+    return validate_against_schema(value, schema)
+
+
 def _build_response(
     *,
     request: ResponsesRequest,
@@ -168,6 +212,12 @@ async def create_response(
 ) -> ResponsesResponse | StreamingResponse:
     """OpenAI-compatible Responses API endpoint."""
     messages = _to_chat_messages(request)
+    format_instruction, _schema, _name = _structured_output_spec(request)
+    if format_instruction:
+        # Appended as a final system message so it is the LAST thing the model
+        # reads before generating — the position instruction-following models
+        # weight most.
+        messages = [*messages, _ChatMessage(role="system", content=format_instruction)]
     prompt = messages_to_prompt(
         messages,
         message_template=config_.chat_message_template,
@@ -237,6 +287,17 @@ async def create_response(
     completion = generated_text[len(prompt) :] if generated_text.startswith(prompt) else generated_text
     completion_tokens = _token_count(completion)
     metrics.observe_tokens(endpoint="responses", token_count=completion_tokens)
+
+    # Structured output asked for JSON: report when the reply did not comply.
+    # The grammar described in ``json_grammar`` is NOT applied as a hard logit
+    # mask here (that needs a per-step hook in the generation loop, tracked as
+    # the remaining gap in ADR-017). What this server CAN honestly promise is
+    # the check: a caller that asked for a schema is told whether its reply
+    # validates, instead of discovering it in its own parser.
+    if _schema is not None:
+        problems = _check_structured_output(completion, _schema)
+        if problems:
+            logger.warning("structured output for schema %r did not validate: %s", _name, "; ".join(problems[:5]))
 
     return _build_response(
         request=request,

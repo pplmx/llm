@@ -609,6 +609,52 @@ class ResponsesIncompleteDetails(BaseModel):
     )
 
 
+class ResponsesJSONSchemaFormat(BaseModel):
+    """``text.format`` for structured output: a JSON Schema the reply must match."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["json_schema"] = "json_schema"
+    name: str = Field(..., min_length=1, description="Schema name.")
+    schema_: dict[str, Any] = Field(
+        ...,
+        alias="schema",
+        description="The JSON Schema the output must validate against.",
+    )
+    description: str | None = Field(None, description="Optional guidance for the model.")
+    strict: bool | None = Field(None, description="Accepted for compatibility; always enforced.")
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+
+class ResponsesTextFormatJSONObject(BaseModel):
+    """``text.format`` for plain JSON mode (valid JSON, no schema)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["json_object"] = "json_object"
+
+
+class ResponsesTextFormatText(BaseModel):
+    """``text.format`` for the default plain-text mode."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: Literal["text"] = "text"
+
+
+class ResponsesTextConfig(BaseModel):
+    """``text`` on a Responses request."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    format: ResponsesTextFormatText | ResponsesTextFormatJSONObject | ResponsesJSONSchemaFormat = Field(
+        default_factory=ResponsesTextFormatText,
+        discriminator="type",
+        description="Output format: text (default), json_object, or json_schema.",
+    )
+
+
 class ResponsesRequest(BaseModel):
     """OpenAI-compatible Responses API request."""
 
@@ -646,7 +692,12 @@ class ResponsesRequest(BaseModel):
     background: bool | None = Field(None, description="UNSUPPORTED: background execution.")
     include: list[str] | None = Field(None, description="UNSUPPORTED: extra output fields.")
     reasoning: Any | None = Field(None, description="UNSUPPORTED: reasoning configuration.")
-    text: Any | None = Field(None, description="UNSUPPORTED: structured-output formats.")
+    text: ResponsesTextConfig | None = Field(
+        None,
+        description=(
+            "Output format. Set ``text.format`` to ``{type: json_schema, name, schema}`` for schema-constrained JSON."
+        ),
+    )
     truncation: str | None = Field(None, description="UNSUPPORTED: context truncation strategies.")
 
     @field_validator("input")
@@ -675,7 +726,6 @@ class ResponsesRequest(BaseModel):
             "background": self.background,
             "include": self.include,
             "reasoning": self.reasoning,
-            "text": self.text,
             "truncation": self.truncation,
         }
         requested = [name for name, value in unsupported.items() if value is not None and value is not False]

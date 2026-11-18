@@ -50,6 +50,7 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-014: ZeRO Stage-2 Activation/Gradient Sharding](014-zero-stage-2-activation-sharding.md)
 - [ADR-015: ZeRO Stage-3 Parameter Sharding](015-zero-stage-3-parameter-sharding.md)
 - [ADR-016: TensorRT & Core ML Feasibility](016-tensorrt-coreml-feasibility.md)
+- [ADR-017: Structured Output — JSON Grammar Now, Hard Logit Mask Later](017-structured-output-json-grammar.md)
 
 ## Creating a New ADR
 
