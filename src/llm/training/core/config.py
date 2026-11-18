@@ -999,12 +999,16 @@ class CheckpointConfig(BaseModel):
 class LoggingConfig(BaseModel):
     """Logging configuration"""
 
-    # Must be positive: three call sites compute ``(batch_idx + 1) % log_interval``
-    # to decide when to log (``engine.py`` twice, ``ppo_task.py`` once). A zero
+    # Must be positive: four call sites compute ``(batch_idx + 1) % log_interval``
+    # to decide when to log (``engine.py`` twice, ``ppo_task.py`` once,
+    # ``callbacks.py`` once). A zero
     # raised a bare ``ZeroDivisionError`` from inside the training loop, on the
     # first batch that would have logged; ``callbacks.py`` guarded its own use
-    # with ``> 0``, so the layers disagreed about whether 0 was allowed. There is
-    # no "0 = off" anywhere, so constraining the field makes all four agree.
+    # with ``> 0``, so the layers previously disagreed about whether 0 was
+    # allowed. There is no "0 = off" anywhere, so constraining the field makes
+    # all four agree. That ``> 0`` check is now unreachable through the public
+    # config; it is kept as a defensive guard in case the constraint is ever
+    # relaxed, not as a live branch.
     log_interval: int = Field(10, gt=0)
     log_level: str = "INFO"
     log_dir: str = "logs"
