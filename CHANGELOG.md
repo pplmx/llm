@@ -341,6 +341,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Spot-checked that the recently audited tests actually FAIL when the code is wrong** (testing): the previous rounds confirmed several modules behave correctly, but "the test passes" only means something if it would fail on a regression. Four mutations were applied and every one was caught — disabling `LayerQuantPolicy`'s intra-policy duplicate detection, disabling `resolve_layer_policies`' cross-policy overlap detection, forcing `num_kv_heads` to `None` (silently dropping GQA), and forcing `use_glu` to `True` (rebuilding a dense MLP with random gate weights). Each produced a test failure naming the right property, not a generic crash. Also surveyed the 176 `is not None` assertions for the "assert the result exists and nothing else" pattern: the ones sampled all sit alongside substantive checks (`len(seq.generated_ids) == 1`, `not prefix_cache._entries`, `num_blocks == 32`), i.e. they are preconditions, not the whole test. **No product defect and no code change.** Recorded because "I verified module X" is a weaker claim than "the tests for X would catch it if I were wrong", and the difference is exactly the fake-passing-test risk this session keeps running into.
 
+
+- **Spot-checked two ROADMAP `[x]` claims for actual availability** (quantization): a feature marked done but unusable is worse than an untested one, so the two most intricate completed entries were exercised end to end. Mixed-precision GPTQ works: `GPTQConfig(layer_policies=(LayerQuantPolicy(target_modules=('a',), bits=8),))` on a two-layer model produced `a.bits == 8` alongside `b.bits == 4`, i.e. the per-layer policy really reaches the algorithm. QLoRA's NF4 path works too, and its `NF4_LEVELS` table matches bitsandbytes' official values digit for digit, with a `block_size=64` round trip giving 9.4% relative error — the expected 4-bit range. One check of mine was WRONG and worth recording: I asserted the level table is symmetric (`levels == -levels.flip(0)`), which failed. NF4's 16 levels are the quantiles of a standard normal and include an exact `0.0` at index 7, so 15 non-zero values cannot pair up and that symmetry test is simply inapplicable — the table is correct. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
