@@ -493,3 +493,68 @@ class TestLoRAGradientRouting:
             "disabled forward does not equal the base layer"
         )
         assert torch.allclose(reenabled, adapted, atol=1e-6), "re-enabling did not restore the adapter"
+
+
+class TestTargetModulesAreASubstringFilter:
+    """``target_modules`` filters layers; matching nothing is a no-op, not an error.
+
+    This is the contract every PEFT applier shares — ``apply_ia3``,
+    ``apply_prefix_tuning`` and the adapter applier each have an identically
+    named integration test asserting it. ``apply_lora`` had no such test at the
+    unit level.
+
+    It differs DELIBERATELY from the quantization helpers, which match layer
+    names EXACTLY (``target_set & all_names``) and therefore do raise when
+    nothing matches: an exact name that misses is a typo, while a substring
+    pattern is a filter whose empty result can be legitimate.
+    """
+
+    def test_a_pattern_matching_no_layer_wraps_nothing_and_does_not_raise(self):
+        model = torch.nn.Sequential(torch.nn.Linear(8, 8), torch.nn.ReLU(), torch.nn.Linear(8, 4))
+
+        apply_lora(model, rank=4, target_modules=["no_such_module"])
+
+        wrapped = [module for module in model.modules() if isinstance(module, LoRALinear)]
+        assert wrapped == []
+
+    def test_matching_is_by_substring_not_exact_name(self):
+        """A pattern contained in the qualified name selects that layer.
+
+        The layer names must differ from the pattern for this to prove anything:
+        on a bare ``Sequential`` the names ARE ``"0"``/``"1"``, so substring and
+        exact matching agree and a change from one to the other would go
+        undetected (verified).
+        """
+
+        class Block(torch.nn.Module):
+            def __init__(self, in_features: int, out_features: int, projection_name: str) -> None:
+                super().__init__()
+                setattr(self, projection_name, torch.nn.Linear(in_features, out_features))
+
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.attention_block = Block(8, 8, "qkv_proj")
+                self.mlp_block = Block(8, 4, "fc1")
+
+        model = Model()
+
+        # "self_attn" is not an exact name of anything; it appears only inside
+        # the qualified name ``attention_block.qkv_proj`` when the module is
+        # named to contain it. Use a pattern that is a genuine substring.
+        model.attention_block.self_attn_qkv_proj = model.attention_block.qkv_proj
+        del model.attention_block.qkv_proj
+
+        apply_lora(model, rank=4, target_modules=["self_attn"])
+
+        assert isinstance(model.attention_block.self_attn_qkv_proj, LoRALinear)
+        assert not isinstance(model.mlp_block.fc1, LoRALinear)
+
+    def test_an_empty_pattern_list_means_every_linear(self):
+        """``[]`` is the documented "apply to all" value, distinct from a no-op."""
+        model = torch.nn.Sequential(torch.nn.Linear(8, 8), torch.nn.Linear(8, 4))
+
+        apply_lora(model, rank=4, target_modules=[])
+
+        wrapped = [module for module in model.modules() if isinstance(module, LoRALinear)]
+        assert len(wrapped) == 2
