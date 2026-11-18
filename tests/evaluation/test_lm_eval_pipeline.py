@@ -24,6 +24,8 @@ unexecuted on CI, which is exactly where a regression would hide.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
 
 from llm.evaluation.harness.presets import (
@@ -1081,3 +1083,116 @@ def test_standalone_run_preset_helper(mocked_lm_eval):  # noqa: ARG001
     out = adapter_module.run_preset("mmlu", model="m")
     assert out["results"]["sentinel"]["acc,none"] == 0.5
     assert _FakeEvaluator.last_call["tasks"] == ["mmlu"]
+
+
+# --- loglikelihood against an ANALYTIC reference ----------------------------
+#
+# The tests above check shapes, batching and protocol wiring. None of them
+# verifies that the log-probability is numerically CORRECT, because with a real
+# model there is nothing to compare against. A model whose logits do not depend
+# on position makes the answer analytic: the continuation's score is the sum of
+# `log_softmax(row)[token]` over its tokens, which is independent of how the
+# harness slices the window.
+
+
+class _AnalyticLogits(torch.nn.Module):
+    """Returns one fixed logit row at every position, so scoring is closed-form."""
+
+    def __init__(self, table: torch.Tensor) -> None:
+        super().__init__()
+        self.table = table
+        self.dummy = torch.nn.Parameter(torch.zeros(1))
+
+    def forward(self, input_ids, use_cache=False):
+        batch, seq = input_ids.shape
+        return self.table.expand(batch, seq, self.table.shape[-1])
+
+
+class _CharTokenizer:
+    """Character-level tokenizer: ``"bcd"`` -> ``[2, 3, 4]``."""
+
+    VOCAB: ClassVar[dict[str, int]] = {"a": 1, "b": 2, "c": 3, "d": 4}
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        return [self.VOCAB[ch] for ch in text]
+
+    def __call__(self, text: str, return_tensors=None, add_special_tokens: bool = False):
+        return {"input_ids": torch.tensor([self.encode(text)])}
+
+
+class _Request:
+    def __init__(self, args) -> None:
+        self.args = args
+
+
+def _analytic_lm(max_length: int):
+    from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM
+
+    torch.manual_seed(0)
+    table = torch.randn(1, 1, 8)
+    return LlamaLmEvalLM(_AnalyticLogits(table), _CharTokenizer(), max_length=max_length), table
+
+
+def test_loglikelihood_matches_the_analytic_value_for_one_token():
+    lm, table = _analytic_lm(max_length=64)
+    got = lm.loglikelihood([_Request(("a", "b"))])[0][0]
+    expected = float(torch.log_softmax(table[0, 0], dim=-1)[2])
+    assert abs(got - expected) < 1e-5, f"got {got}, analytic {expected}"
+
+
+def test_loglikelihood_sums_over_a_multi_token_continuation():
+    """The continuation's tokens are ALL scored, summed — not just the last one.
+
+    A shift-by-one slip shows up here and nowhere else: scoring only the final
+    token, or off-by-one rows, still returns a plausible negative number.
+    """
+    lm, table = _analytic_lm(max_length=64)
+    got = lm.loglikelihood([_Request(("a", "bcd"))])[0][0]
+    log_probs = torch.log_softmax(table[0, 0], dim=-1)
+    expected = float(log_probs[2] + log_probs[3] + log_probs[4])
+    assert abs(got - expected) < 1e-5, f"got {got}, analytic {expected}"
+
+
+def test_loglikelihood_drops_an_unscorable_first_token_when_the_context_is_truncated():
+    """When the window drops the context, the continuation's first token has no
+    predicting logit and must NOT be counted.
+
+    Scoring it anyway (or scoring it against row 0, which predicts a token that
+    is no longer in the window) gives a different, still-plausible number — the
+    exact case the ``first_scorable = max(ctx_len, 1)`` comment describes.
+    """
+    lm, table = _analytic_lm(max_length=3)
+    got = lm.loglikelihood([_Request(("a", "bcd"))])[0][0]
+    log_probs = torch.log_softmax(table[0, 0], dim=-1)
+    expected = float(log_probs[3] + log_probs[4])
+    assert abs(got - expected) < 1e-5, f"got {got}, analytic {expected} (the 'b' token is unscorable)"
+
+
+def test_loglikelihood_scores_every_token_when_the_window_fits_exactly():
+    """The untruncated case must score all continuation tokens."""
+    lm, table = _analytic_lm(max_length=4)
+    got = lm.loglikelihood([_Request(("a", "bcd"))])[0][0]
+    log_probs = torch.log_softmax(table[0, 0], dim=-1)
+    expected = float(log_probs[2] + log_probs[3] + log_probs[4])
+    assert abs(got - expected) < 1e-5, f"got {got}, analytic {expected}"
+
+
+def test_loglikelihood_rolling_matches_the_analytic_value():
+    """Perplexity-style scoring skips the first token, which has no predictor."""
+    lm, table = _analytic_lm(max_length=64)
+    got = lm.loglikelihood_rolling([_Request(("abcd",))])[0]
+    log_probs = torch.log_softmax(table[0, 0], dim=-1)
+    expected = float(log_probs[2] + log_probs[3] + log_probs[4])
+    assert abs(got - expected) < 1e-5, f"got {got}, analytic {expected}"
+
+
+def test_is_greedy_reflects_the_model_argmax():
+    """``is_greedy`` must be True exactly when the continuation IS the argmax."""
+    from llm.evaluation.harness.lm_eval_lm import LlamaLmEvalLM
+
+    table = torch.zeros(1, 1, 8)
+    table[0, 0, 3] = 5.0  # argmax is token 3 == 'c'
+    lm = LlamaLmEvalLM(_AnalyticLogits(table), _CharTokenizer(), max_length=64)
+
+    assert lm.loglikelihood([_Request(("a", "c"))])[0][1] is True
+    assert lm.loglikelihood([_Request(("a", "d"))])[0][1] is False
