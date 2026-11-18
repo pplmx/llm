@@ -350,6 +350,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ran the `e2e` gate, which this session had never verified** (testing): `just test-e2e` = **58 passed, 1 skipped** (the skip is "flash-attn not installed"), so the closed-loop tests — train/save/serve, resume, streaming, DPO/SFT main paths, TP checkpoint round trip — are all green. The gate also produces thousands of passing `test-fast` and `e2e` results on a first run, which is worth stating explicitly rather than assuming. Its one `DeprecationWarning` (`Loading legacy checkpoint format ... run llm migrate-ckpt`) comes from `test_serve_main_path.py`, which hand-writes a legacy `model.pt` to keep the PEFT round trip free of full engine construction — deliberate, and the v2 split layout is covered by dedicated e2e tests (`test_dpo_main_path`, `test_resume_training`, `test_sft_main_path`, `test_tp_checkpoint_roundtrip`). Checked the consequence rather than assuming it: `serving/loader.py` handles BOTH layouts (stem, any of the three v2 sidecars, legacy `.pt`, and a bare quantized module blob) and probes `.pt` with `weights_only=True` so an untrusted file cannot run `__reduce__` code at serve time. **No product defect and no code change.**
 
+
+- **Ran the GPU gate — the last unverified suite — and every GPU-marked test passes** (testing): `just test-gpu` (`gpu or multi_gpu or need_gpu or full_cluster`) = **32 passed, 4 skipped, 0 failed** in 7m28s, measured on GPUs 4-7 while they carried ~49 GB of unrelated load, so the passes are not a quiet-machine artifact. All four skips are "flash-attn not installed", the same environmental reason as everywhere else. Run individually the markers split 4 (`gpu`) + 31 (`multi_gpu`/`need_gpu`) + 1 (`full_cluster`) = 36 collected, which is exactly the collection count, so nothing was silently not-run. **Every gate this repo defines has now been executed in this session and is green**: `test-fast` 4802 passed / 19 skipped, `test-heavy` 86 passed / 3 skipped, `test-e2e` 58 passed / 1 skipped, `test-gpu` 32 passed / 4 skipped, plus `check` and `docs`. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
