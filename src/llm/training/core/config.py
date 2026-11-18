@@ -748,8 +748,11 @@ class DistributedConfig(BaseSettings):
         pattern="^(fp32|bf16|fp16)$",
         description=(
             "FSDP parameter / gradient / buffer dtype. 'bf16' is the "
-            "recommended default for modern GPUs; 'fp16' requires a "
-            "loss scaler and is rarely worth the complexity."
+            "recommended default for modern GPUs. 'fp16' is accepted here so the "
+            "error names the real reason, but the FSDP builder REFUSES it: sharded "
+            "fp16 parameters and gradient reductions need a loss scaler this "
+            "framework does not wire, so the run would diverge. Use 'bf16' (on "
+            "GPUs that support it) or 'fp32'."
         ),
     )
     fsdp_auto_wrap_min_params: int = Field(
