@@ -1155,6 +1155,65 @@ class TestUnusedParallelSizes:
 
         assert not any("kl_coef" in record.getMessage() for record in caplog.records)
 
+    @pytest.mark.parametrize(
+        ("source", "field", "value"),
+        [
+            ("local", "dataset_name", "c4"),
+            ("local", "dataset_config", "en"),
+            ("local", "dataset_split", "validation"),
+            ("local", "text_column", "content"),
+            ("dedup_local", "dataset_name", "c4"),
+        ],
+    )
+    def test_hf_only_knobs_warn_without_an_hf_source(self, source, field, value, caplog):
+        """HF-only knobs are read by nothing on a local source; say so.
+
+        The mirror of the dedup-knob warning. ``dataset_name`` / ``dataset_config``
+        / ``dataset_split`` / ``text_column`` are consumed only by the ``hf`` and
+        ``dedup_hf`` factories (``sources.py:417-477``). Measured before the check:
+        a ``local`` source with ``dataset_name='c4'`` and ``text_column='content'``
+        read exactly the same rows as with neither set — a config that looks like
+        it points at a Hub dataset and silently reads the local file.
+        """
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source=source, **{field: value})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(field in m and "HuggingFace-only" in m for m in messages), (
+            f"expected a warning naming {field} under data_source={source!r}, got: {messages}"
+        )
+
+    @pytest.mark.parametrize("source", ["hf", "dedup_hf"])
+    def test_hf_knobs_under_an_hf_source_are_silent(self, source, caplog):
+        """The legitimate pairings must not warn."""
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source=source, dataset_name="c4", text_column="content")
+
+        assert not any("HuggingFace-only" in record.getMessage() for record in caplog.records)
+
+    def test_a_default_valued_hf_knob_stays_quiet(self, caplog):
+        """Writing the DEFAULT value states nothing lost and must not warn.
+
+        ``dataset_split: train`` is what the field already is; a config that spells
+        it out explicitly has not expressed any intent that gets dropped.
+        """
+        import logging
+
+        from llm.training.core.config import DataConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DataConfig(data_source="local", dataset_split="train", text_column="text")
+
+        assert not any("HuggingFace-only" in record.getMessage() for record in caplog.records)
+
     def test_zero_stage_under_zero_is_silent(self, caplog):
         """The legitimate pairing must not warn."""
         import logging

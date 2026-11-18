@@ -1131,6 +1131,39 @@ class DataConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _warn_hf_knobs_without_an_hf_source(self) -> DataConfig:
+        """Flag HuggingFace-only knobs set while ``data_source`` is not an HF variant.
+
+        The mirror of :meth:`_warn_dedup_knobs_without_a_dedup_source`.
+        ``dataset_name`` / ``dataset_config`` / ``dataset_split`` / ``text_column``
+        are read only by the ``hf`` and ``dedup_hf`` factories
+        (``sources.py:417-477``); with ``local``/``dedup_local`` nothing consumes
+        them. Measured: a ``local`` source configured with
+        ``dataset_name='c4'`` and ``text_column='content'`` read exactly the same
+        rows as with neither set — a config that looks like it points at a Hub
+        dataset and silently reads the local file instead.
+
+        Only names with a non-default value are reported, so writing
+        ``dataset_split: train`` (the default) states nothing and stays quiet.
+        """
+        if self.data_source in ("hf", "dedup_hf"):
+            return self
+        defaults = {"dataset_name": None, "dataset_config": None, "dataset_split": "train", "text_column": "text"}
+        ignored = [
+            name
+            for name in ("dataset_name", "dataset_config", "dataset_split", "text_column")
+            if name in self.model_fields_set and getattr(self, name) != defaults[name]
+        ]
+        if ignored:
+            logger.warning(
+                "data_source=%r does not read the HuggingFace-only option(s) %s, so they have no "
+                "effect. Switch to 'hf' / 'dedup_hf' to use them, or remove them.",
+                self.data_source,
+                ", ".join(ignored),
+            )
+        return self
+
     @field_validator("data_source")
     @classmethod
     def _validate_data_source_registered(cls, value: str) -> str:
