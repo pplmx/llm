@@ -961,6 +961,75 @@ class TestUnusedParallelSizes:
 
         assert not any("is only read when parallel_strategy" in r.getMessage() for r in caplog.records)
 
+    @pytest.mark.parametrize(
+        "field",
+        ["fsdp_mixed_precision", "fsdp_auto_wrap_min_params", "fsdp_cpu_offload"],
+    )
+    def test_fsdp_knobs_warn_outside_the_fsdp_strategy(self, field, caplog):
+        """The three FSDP knobs are read only inside the ``fsdp`` branch.
+
+        They reach ``wrap_model_for_training`` on every strategy, but
+        ``_build_fsdp`` — the only consumer — is reached from
+        ``parallel_strategy == "fsdp"``. Measured before the fix: setting
+        ``fsdp_mixed_precision: bf16`` under ``parallel_strategy: ddp`` produced
+        no warning, so a YAML that looked like it configured sharded mixed
+        precision silently ran plain DDP.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        values = {"fsdp_mixed_precision": "bf16", "fsdp_auto_wrap_min_params": 1000, "fsdp_cpu_offload": True}
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="ddp", **{field: values[field]})
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(f"{field}=" in m and "is only read when parallel_strategy" in m for m in messages), (
+            f"expected an ignored-knob warning naming {field}, got: {messages}"
+        )
+
+    def test_a_boolean_knob_is_not_swallowed_by_the_zero_one_rule(self, caplog):
+        """``True == 1`` in Python, so the size-knob rule must not cover booleans.
+
+        The validator skips values ``in (0, 1)`` because those are no-ops for
+        SIZE knobs (0 = derive from world_size, 1 = single shard). Booleans
+        compare equal to those integers, so the rule silently exempted
+        ``fsdp_cpu_offload=True`` and ``False`` alike — measured: neither
+        produced a warning under ``parallel_strategy='ddp'``.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        for flag in (True, False):
+            caplog.clear()
+            with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+                DistributedConfig(parallel_strategy="ddp", fsdp_cpu_offload=flag)
+            messages = [record.getMessage() for record in caplog.records]
+            assert any("fsdp_cpu_offload" in m for m in messages), (
+                f"fsdp_cpu_offload={flag} under ddp produced no warning; a boolean was treated as "
+                f"a no-op size value. Got: {messages}"
+            )
+
+    @pytest.mark.parametrize("field", ["tp_size", "pp_size", "dp_size", "pp_n_microbatches", "zero_stage"])
+    def test_the_zero_one_exemption_still_applies_to_size_knobs(self, field, caplog):
+        """The fix must not make the size knobs noisy.
+
+        ``tp_size=1``/``pp_size=1``/``dp_size=1``/``pp_n_microbatches=1`` are all
+        defaults and ``zero_stage=1`` is the default stage; none expresses an
+        intent that gets lost, so all stay quiet.
+        """
+        import logging
+
+        from llm.training.core.config import DistributedConfig
+
+        with caplog.at_level(logging.WARNING, logger="llm.training.core.config"):
+            DistributedConfig(parallel_strategy="ddp", **{field: 1})
+
+        assert not any("is only read when parallel_strategy" in r.getMessage() for r in caplog.records), (
+            f"{field}=1 under ddp should stay quiet"
+        )
+
     def test_zero_stage_under_zero_is_silent(self, caplog):
         """The legitimate pairing must not warn."""
         import logging

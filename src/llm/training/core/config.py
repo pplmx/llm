@@ -827,23 +827,39 @@ class DistributedConfig(BaseSettings):
             "dp_size": {"3d"},
             # `pp_n_microbatches` is only consumed by the pipeline schedule.
             "pp_n_microbatches": {"pp", "3d"},
+            # The three FSDP knobs are read ONLY inside `_build_fsdp`, which
+            # `wrap_model_for_training` reaches from its ``parallel_strategy ==
+            # "fsdp"`` branch (parallel.py:478). Measured: setting
+            # `fsdp_mixed_precision: bf16` under `parallel_strategy: ddp` was
+            # accepted with no warning — a YAML that looked like it configured
+            # sharded mixed precision and silently ran plain DDP.
+            "fsdp_mixed_precision": {"fsdp"},
+            "fsdp_auto_wrap_min_params": {"fsdp"},
+            "fsdp_cpu_offload": {"fsdp"},
         }
         for size_field, strategies in valid_under.items():
             if size_field not in explicitly_set:
                 continue
             if self.parallel_strategy in strategies:
                 continue
-            if getattr(self, size_field, 0) in (0, 1):
-                # 0 means "derive from world_size" and 1 is a no-op anyway —
-                # neither expresses intent that gets lost. (For `zero_stage`,
-                # explicit 1 is the default stage, so it is quiet too.)
+            value = getattr(self, size_field, 0)
+            # The quiet-value rule is for SIZE knobs: 0 means "derive from
+            # world_size" and 1 is a no-op, so neither expresses lost intent.
+            # It must NOT apply to booleans — Python puts ``True == 1`` and
+            # ``False == 0``, so a plain ``value in (0, 1)`` swallowed
+            # ``fsdp_cpu_offload=True`` and the knob was silently ignored.
+            # Measured before the guard below: no warning was emitted for
+            # ``fsdp_cpu_offload=True`` under ``parallel_strategy='ddp'``.
+            if not isinstance(value, bool) and value in (0, 1):
+                # (For `zero_stage`, explicit 1 is the default stage, so it is
+                # quiet too.)
                 continue
             logger.warning(
                 "%s=%s is only read when parallel_strategy is one of %s, but the current "
                 "strategy is %r — the value is ignored. Set parallel_strategy accordingly, "
                 "or remove %s.",
                 size_field,
-                getattr(self, size_field),
+                value,
                 sorted(strategies),
                 self.parallel_strategy,
                 size_field,
