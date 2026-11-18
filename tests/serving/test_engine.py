@@ -1,3 +1,4 @@
+import contextlib
 from unittest.mock import patch
 
 import pytest
@@ -1974,3 +1975,57 @@ def test_a_prefix_cache_does_not_survive_its_slot_being_reused(device):
     actual = _greedy_generate(engine, "p2", "abcdefgh", max_new_tokens=2)
 
     assert actual == expected, f"after its slot was reused, the prompt generated {actual} instead of {expected}"
+
+
+# --- every exit path must return the slot -----------------------------------
+#
+# The individual paths already have tests, but nothing asserts the INVARIANT
+# across all of them: whatever way a request ends, the slot pool must be back to
+# its initial size. A future exit path added without a release would be caught
+# only if someone remembered to write its test; this parametrized check makes
+# that omission the failure.
+
+_LEAK_CONFIGS = ["normal-completion", "stop-sequence", "abandoned-generator", "forward-failure"]
+
+
+@pytest.mark.parametrize("exit_path", _LEAK_CONFIGS)
+def test_no_exit_path_leaks_a_kv_slot(exit_path, tiny_model, device, mock_tokenizer):
+    """After requests end by ANY path, the slot pool is back to full."""
+    tiny_model.eval()
+    total_slots = 4
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=total_slots,
+        device=str(device),
+    )
+    initial_free = engine.slot_allocator.num_free
+    assert initial_free == total_slots
+
+    def run_one(request_id: str) -> None:
+        request = GenerationRequest(prompt="hello", max_new_tokens=3)
+        request.request_id = request_id
+        if exit_path == "abandoned-generator":
+            generator = engine.stream_request(request)
+            next(generator)
+            generator.close()  # consumer disconnects mid-stream
+            return
+        if exit_path == "forward-failure":
+            with (
+                patch.object(engine, "_forward_and_sample", side_effect=RuntimeError("simulated OOM")),
+                contextlib.suppress(Exception),
+            ):
+                engine.generate_request(request)
+            return
+        if exit_path == "stop-sequence":
+            request.stop = ["3"]
+        engine.generate_request(request)
+
+    for index in range(5):
+        run_one(f"{exit_path}-{index}")
+
+    assert engine.slot_allocator.num_free == initial_free, (
+        f"{exit_path}: {initial_free - engine.slot_allocator.num_free} of {total_slots} KV slots "
+        f"leaked after 5 requests (free: {engine.slot_allocator.num_free})"
+    )
+    assert not engine.scheduler.running, f"{exit_path}: sequences left in the running set: {engine.scheduler.running}"
