@@ -30,7 +30,7 @@ import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
@@ -44,6 +44,7 @@ from llm.serving.errors import DEFAULT_QUEUE_FULL_RETRY_AFTER_SECONDS, APIError,
 from llm.serving.metrics import METRICS, ServingMetrics
 from llm.serving.routers.generate import (
     _drive_sync_iterator,
+    _require_generation_service,
     _sync_generate,
     _sync_stream_generate,
     _token_count,
@@ -154,6 +155,43 @@ def _structured_output_spec(request: ResponsesRequest) -> tuple[str | None, dict
     return None, None, None
 
 
+def _build_constrained_processor(request: ResponsesRequest):
+    """Build a logits processor for ``text.format``, or None for plain text.
+
+    Returns ``(processor, schema, name)``. The processor is only created when the
+    vocabulary can be mapped id -> text: without that mapping there is nothing to
+    mask against, and the caller falls back to prompting + the post-check (the
+    behaviour before the hook existed).
+    """
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    text_config = request.text
+    if text_config is None or text_config.format.type == "text":
+        return None, None, None
+
+    service = _require_generation_service()
+    tokenizer = getattr(service, "tokenizer", None)
+    to_text = getattr(tokenizer, "itos", None)
+    if not isinstance(to_text, dict) or not to_text:
+        # No id -> text map: structured output degrades to prompting + checking.
+        logger.warning(
+            "tokenizer %s exposes no id->token map; structured output will prompt for JSON but cannot mask the logits",
+            type(tokenizer).__name__,
+        )
+        fmt = text_config.format
+        return None, getattr(fmt, "schema_", None), getattr(fmt, "name", None)
+
+    fmt = text_config.format
+    schema = getattr(fmt, "schema_", None)
+    name = getattr(fmt, "name", None)
+    processor = GrammarConstrainedProcessor(
+        to_text,
+        eos_id=getattr(tokenizer, "eos_token_id", None),
+        vocab_size=getattr(tokenizer, "vocab_size", None),
+    )
+    return processor, schema, name
+
+
 def _check_structured_output(completion: str, schema: dict) -> list[str]:
     """Problems with ``completion`` as JSON for ``schema``; empty means valid."""
     import json
@@ -213,6 +251,12 @@ async def create_response(
     """OpenAI-compatible Responses API endpoint."""
     messages = _to_chat_messages(request)
     format_instruction, _schema, _name = _structured_output_spec(request)
+    # The hard half: a grammar-backed logits processor masks every token that
+    # would make the reply unparseable. None when the request asked for plain
+    # text or the tokenizer exposes no id->text map.
+    _processor, _proc_schema, _proc_name = _build_constrained_processor(request)
+    if _proc_schema is not None:
+        _schema, _name = _proc_schema, _proc_name
     if format_instruction:
         # Appended as a final system message so it is the LAST thing the model
         # reads before generating — the position instruction-following models
@@ -234,6 +278,7 @@ async def create_response(
                 prompt=prompt,
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
+                logits_processor=_processor,
             ),
             media_type="text/event-stream",
         )
@@ -253,6 +298,7 @@ async def create_response(
                             max_new_tokens=max_output_tokens,
                             temperature=temperature,
                             top_p=request.top_p,
+                            logits_processor=_processor,
                         )
         except TimeoutError as exc:
             t.set_status(504)
@@ -321,6 +367,7 @@ async def _responses_stream_generator(
     prompt: str,
     max_output_tokens: int,
     temperature: float,
+    logits_processor: Any = None,
 ) -> AsyncGenerator[str]:
     """Stream the Responses API event sequence.
 
@@ -412,7 +459,12 @@ async def _responses_stream_generator(
     iterator = None
     failed = False
     try:
-        iterator = _sync_stream_generate(prompt=prompt, max_new_tokens=max_output_tokens, temperature=temperature)
+        iterator = _sync_stream_generate(
+            prompt=prompt,
+            max_new_tokens=max_output_tokens,
+            temperature=temperature,
+            logits_processor=logits_processor,
+        )
         # ``_drive_sync_iterator`` is an ASYNC GENERATOR wrapping the sync one (it
         # closes the sync generator when the consumer abandons it, releasing the
         # engine's KV slot). Awaiting it raises "'async_generator' object can't be

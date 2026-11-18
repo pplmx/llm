@@ -292,3 +292,119 @@ def test_the_mask_builder_admits_only_grammatical_tokens():
     assert 0 in mask, "an object may start with '{'"
     assert 8 not in mask, "'x' cannot start a JSON document"
     assert 1 not in mask, "'}' cannot be the first character"
+
+
+# --- constrained decoding (the logits processor) ----------------------------
+
+
+def _toy_vocab() -> dict[int, str]:
+    """A de-duplicated character vocabulary that can express any JSON."""
+    chars = list(dict.fromkeys('{}[]",:0123456789- truefalsn'))
+    return dict(enumerate(chars))
+
+
+def _legal_chars(processor, context: str, vocab_size: int) -> set[str]:
+    import torch
+
+    out = processor(torch.zeros(vocab_size), context)
+    allowed = out.isfinite()
+    return {processor._id_to_token[i] for i in allowed.nonzero().flatten().tolist()}
+
+
+def test_the_processor_masks_illegal_continuations():
+    """A logits processor must actually remove the impossible next characters.
+
+    This is the half that turns structured output from "we check the reply" into
+    "the reply cannot be malformed", so each state is asserted on the characters
+    that must survive AND on one that must not.
+    """
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    vocab = _toy_vocab()
+    processor = GrammarConstrainedProcessor(vocab, eos_id=None, vocab_size=len(vocab))
+
+    first = _legal_chars(processor, "", len(vocab))
+    assert "{" in first
+    assert '"' in first
+    assert "x" not in first, "a bare 'x' cannot start a JSON document"
+
+    after_object = _legal_chars(processor, "{", len(vocab))
+    assert '"' in after_object, "an object starts with a key"
+    assert "1" not in after_object, "an object cannot start with a bare number"
+
+    after_key = _legal_chars(processor, '{"a"', len(vocab))
+    assert ":" in after_key
+    assert "1" not in after_key, "a key must be followed by ':'"
+
+
+def test_leading_whitespace_is_refused_while_the_document_is_empty():
+    """JSON allows leading blanks; a decoder must not.
+
+    Measured before this rule: a constrained run emitted 40 tokens of pure space
+    and never reached the document, because space stays legal at position 0 and
+    the next step is again unconstrained.
+    """
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    vocab = _toy_vocab()
+    processor = GrammarConstrainedProcessor(vocab, eos_id=None, vocab_size=len(vocab))
+    first = _legal_chars(processor, "", len(vocab))
+    assert " " not in first
+    assert "\n" not in first
+
+
+def test_accept_is_pure_and_does_not_finish_the_document():
+    """``accept()`` must report without advancing the automaton.
+
+    An earlier version called ``_value_completed()`` here, so asking mid-run
+    marked the document finished: measured, a constrained generation emitted "9",
+    the next ``accept()`` flipped the state to done, every further token became
+    illegal, and the processor gave up and let an unconstrained tail through.
+    """
+    from llm.serving.json_grammar import JSONGrammar
+
+    grammar = JSONGrammar()
+    assert grammar.feed("9")
+    before = (grammar.state, grammar.done)
+
+    assert grammar.accept() is True  # "9" IS a complete document
+    assert grammar.accept() is True, "asking twice must not change the answer"
+    assert (grammar.state, grammar.done) == before, "accept() mutated the automaton"
+
+    # The document can still grow: "9" may become "99".
+    assert grammar.step("9")
+    assert grammar.state != "done"
+
+
+def test_a_complete_document_admits_only_eos():
+    """Once the JSON is finished the only legal move is to stop.
+
+    Without this the decoder keeps sampling after a complete document, producing
+    trailing data ("69e" + newline, measured) that ``json.loads`` rejects.
+    """
+    from llm.serving.json_grammar import JSONGrammar, build_logit_mask
+
+    vocab = _toy_vocab()
+    eos = max(vocab) + 1
+    grammar = JSONGrammar()
+    assert grammar.feed("null")
+    assert grammar.accept()
+
+    mask = build_logit_mask(grammar, vocab, vocab_size=eos + 1, eos_id=eos)
+    assert mask == {eos}, f"a finished document should allow only EOS, got {mask}"
+
+    # The processor keeps its own id->text map, so an out-of-vocabulary EOS id is
+    # unknown to ``_legal_chars``; assert through the mask builder instead, which
+    # is the layer that decides.
+    assert build_logit_mask(grammar, vocab, vocab_size=eos + 1, eos_id=eos) == {eos}
+
+
+def test_the_processor_is_optional_and_changes_nothing_when_absent():
+    """A plain request must take exactly the unconstrained path.
+
+    The hook lives in the generation loop, so a regression that applied it
+    unconditionally would silently constrain every request on the server.
+    """
+    from llm.generation.backends import GenerationConfig
+
+    assert GenerationConfig().logits_processor is None

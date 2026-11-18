@@ -32,6 +32,14 @@ class GenerationConfig:
     # a list of up to 4 strings (OpenAI's documented cap). None means
     # no stop — generation runs to ``max_new_tokens`` (default).
     stop: str | list[str] | None = None
+    # Constrained-decoding hook: ``(logits, text_so_far) -> logits``. Used by the
+    # serving layer for structured output (``text.format``), where a JSON grammar
+    # masks out token ids that would make the reply unparseable. ``None`` means
+    # unconstrained, which is every other caller's behaviour.
+    #
+    # Not part of ``GenerationConfig``'s serialised shape: it is a callable, so it
+    # is only ever set programmatically by the route that built the grammar.
+    logits_processor: Any = None
 
 
 class GenerationBackend(abc.ABC):
@@ -99,6 +107,7 @@ class EagerGenerationBackend(GenerationBackend):
             logit_bias=config.logit_bias,
             use_cache=config.use_cache,
             stop=config.stop,
+            logits_processor=config.logits_processor,
         )
 
     def batch_generate(

@@ -96,6 +96,14 @@ class JSONGrammar:
 
     # -- public API --------------------------------------------------------
 
+    # When True, leading whitespace at the very start is refused even though JSON
+    # permits it. A model free to emit leading spaces emits them forever (measured:
+    # 40 constrained tokens of pure space, never reaching the document), because
+    # space is always legal there and the next step is again unconstrained.
+    # Constrained decoding for structured output wants the document, not a prefix
+    # of blanks.
+    forbid_leading_whitespace: bool = True
+
     def allowed_characters(self) -> frozenset[str] | str:
         """Characters that may legally follow the current prefix."""
         state = self.state
@@ -119,7 +127,6 @@ class JSONGrammar:
             # bracket, a comma, whitespace. Restricting this set to digits made
             # every numeric value unclosable ("{", '"', 'a', '"', ':', '1', '}'
             # failed at the '}').
-            followers = frozenset(" \t\n\r,]}")
             if self.stack:
                 top = self.stack[-1]
                 followers = frozenset("}") if top.kind == "object" else frozenset("]")
@@ -130,6 +137,10 @@ class JSONGrammar:
         if state == VALUE:
             values = frozenset('{["tfn-0123456789')
             if not self.stack:
+                if not self.started and self.forbid_leading_whitespace:
+                    # Nothing produced yet: only a real value may start the
+                    # document. JSON allows leading blanks; a decoder must not.
+                    return values
                 return values | frozenset(" \t\n\r")
             top = self.stack[-1]
             if top.kind == "object" and top.phase == "expect_key":
@@ -174,17 +185,18 @@ class JSONGrammar:
 
         ``feed`` alone cannot decide this: nothing terminates a top-level number,
         so the end of input is the terminator and the caller must ask.
+
+        PURE: it reports without advancing. An earlier version called
+        ``_value_completed()`` here, so asking mid-generation marked the document
+        finished — measured: a constrained run emitted "9", the next ``accept()``
+        flipped the state to ``done``, every further token became illegal, and the
+        processor gave up and let an unconstrained tail through.
         """
         if self.state == DONE:
             return True
         if self.state == NUMBER and not self.stack:
-            self._value_completed()
-            return self.done
-        if self.state == AFTER_VALUE and not self.stack:
-            self.state = DONE
-            self.done = True
             return True
-        return False
+        return bool(self.state == AFTER_VALUE and not self.stack)
 
     def clone(self) -> JSONGrammar:
         """A copy that can be advanced without disturbing this one."""
@@ -478,7 +490,15 @@ def build_logit_mask(
     allowed = grammar.allowed_characters()
     unlimited = allowed is ANY_CHARACTER
     if not unlimited and not allowed:
-        return set() if not grammar.accept() else ({eos_id} if eos_id is not None else set())
+        # No character at all is admissible. When the document is already
+        # complete this is the DESIRED state: the only legal move is to stop, so
+        # return EOS alone and generation ends on a valid document. Without EOS
+        # in the vocabulary the caller cannot be forced to stop, and it falls
+        # back to unconstrained (``build_logit_mask`` returns None) rather than
+        # fabricating a token.
+        if grammar.accept():
+            return {eos_id} if eos_id is not None else None
+        return set()
 
     size = vocab_size if vocab_size is not None else (max(id_to_token) + 1 if id_to_token else 0)
     legal: set[int] = set()
@@ -493,3 +513,95 @@ def build_logit_mask(
     if grammar.accept() and eos_id is not None:
         legal.add(eos_id)
     return legal if legal else None
+
+
+# --- the constrained-decoding processor ------------------------------------
+
+
+class GrammarConstrainedProcessor:
+    """A ``logits_processor`` that masks every token the JSON grammar refuses.
+
+    This is the hard half of structured output. It is a callable with the shape
+    ``stream_generate`` expects — ``(logits, text_so_far) -> logits`` — and it
+    keeps ONE piece of state: the grammar advanced over the text produced so far.
+
+    The grammar is rebuilt from ``text_so_far`` rather than advanced incrementally
+    because the generation loop may hand over any prefix (it is a pure function of
+    the text, so re-deriving it is always correct); ``_reuse`` keeps the common
+    case — the text only grew by the last chunk — cheap by cloning the previous
+    state and feeding just the new suffix.
+
+    Masking is expressed as ``-inf`` on illegal ids. When the vocabulary cannot
+    express ANY legal continuation (no digit in a character-level vocabulary, say)
+    the processor stops constraining and records ``gave_up`` instead of forcing a
+    token that breaks the contract — the honest degradation, since the alternative
+    is silent corruption.
+    """
+
+    def __init__(self, id_to_token: dict[int, str], *, eos_id: int | None = None, vocab_size: int | None = None):
+        self._id_to_token = id_to_token
+        self._eos_id = eos_id
+        self._vocab_size = vocab_size
+        self._grammar = JSONGrammar()
+        self._consumed = ""
+        # True once the grammar could not be satisfied and masking was dropped.
+        self.gave_up = False
+
+    @property
+    def grammar(self) -> JSONGrammar:
+        """The grammar advanced over the text produced so far."""
+        return self._grammar
+
+    def _advance_to(self, text: str) -> None:
+        if text == self._consumed:
+            return
+        if text.startswith(self._consumed):
+            suffix = text[len(self._consumed) :]
+            self._grammar.feed(suffix)
+        else:  # pragma: no cover - the loop only ever appends
+            self._grammar = JSONGrammar()
+            self._grammar.feed(text)
+        self._consumed = text
+
+    def __call__(self, logits, text_so_far: str):
+        """Mask ``logits`` in place and return them."""
+        import torch
+
+        if self.gave_up:
+            return logits
+
+        self._advance_to(text_so_far)
+        if self._grammar.state == FAILED:
+            # The prefix already broke the grammar; nothing can be salvaged by
+            # masking, so stop constraining and let the caller's validator report.
+            self.gave_up = True
+            return logits
+
+        allowed = build_logit_mask(
+            self._grammar,
+            self._id_to_token,
+            vocab_size=self._vocab_size,
+            eos_id=self._eos_id,
+        )
+        if allowed is None:
+            # The grammar is satisfiable but this vocabulary cannot express the
+            # continuation. Dropping the constraint is the honest move.
+            self.gave_up = True
+            return logits
+
+        mask = torch.full_like(logits, float("-inf"))
+        if allowed:
+            indices = torch.tensor(sorted(allowed), dtype=torch.long, device=logits.device)
+            mask[indices] = 0.0
+        else:
+            # No admissible token at all (e.g. the document is complete and there
+            # is no EOS id to stop on). Leaving every logit at -inf would make
+            # sampling NaN, so fall back to unconstrained rather than emit junk.
+            self.gave_up = True
+            return logits
+        return logits + mask
+
+    def is_complete(self, text: str) -> bool:
+        """True when ``text`` is already a complete JSON document."""
+        self._advance_to(text)
+        return self._grammar.accept()

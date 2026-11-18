@@ -1,4 +1,4 @@
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 import torch
 
@@ -98,6 +98,7 @@ def stream_generate(
     logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
     stop: str | list[str] | None = None,
+    logits_processor: Callable[[torch.Tensor, str], torch.Tensor] | None = None,
 ) -> Generator[str]:
     """
     Generator function for incremental text generation.
@@ -155,6 +156,9 @@ def stream_generate(
     mask_undecodable_logits(next_token_logits, getattr(tokenizer, "vocab_size", None))
 
     generated_ids = input_ids.copy()
+    # Text produced so far, kept only when a logits processor needs it (a
+    # constrained-decoding grammar is a function of the whole prefix).
+    produced_text = ""
 
     # Stop-sequence tracking. We use a small buffer (``buffer``) that
     # holds decoded text not yet yielded to the caller. After each new
@@ -185,6 +189,13 @@ def stream_generate(
             logit_bias=logit_bias,
         )
 
+        # Constrained decoding hook: the processor sees the current logits and
+        # the text produced so far, and returns logits with illegal continuations
+        # masked out. Applied AFTER penalties (which are additive) and BEFORE
+        # sampling, so a penalty can never resurrect a masked token.
+        if logits_processor is not None:
+            next_token_logits = logits_processor(next_token_logits, produced_text)
+
         token_id = sample_next_token(
             next_token_logits,
             temperature=temperature,
@@ -202,6 +213,8 @@ def stream_generate(
             return
         generated_ids.append(token_id)
         text_chunk = tokenizer.decode([token_id])
+        if logits_processor is not None:
+            produced_text += text_chunk
 
         if stops and text_chunk:
             buffer += text_chunk
@@ -260,6 +273,7 @@ def generate(
     logit_bias: dict[int, float] | None = None,
     use_cache: bool = True,
     stop: str | list[str] | None = None,
+    logits_processor: Callable[[torch.Tensor, str], torch.Tensor] | None = None,
 ) -> str:
     """
     Generate text from a prompt using a trained model.
@@ -278,6 +292,7 @@ def generate(
         logit_bias=logit_bias,
         use_cache=use_cache,
         stop=stop,
+        logits_processor=logits_processor,
     )
     return prompt + "".join(list(generator))
 

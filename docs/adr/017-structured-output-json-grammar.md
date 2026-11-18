@@ -4,7 +4,7 @@ Date: 2026-11-18
 
 ## Status
 
-Accepted (grammar + post-generation check); Proposed (wiring it as a logit mask)
+Accepted (grammar + post-generation check + logit mask, with a measured gap)
 
 ## Context
 
@@ -50,20 +50,47 @@ ignored rather than guessed at.
 
 A violation is **logged and reported**, not silently returned as if it conformed.
 
-### 3. Hard logit masking — NOT DONE, and the gap is named
+### 3. Hard logit masking — DONE, with a measured gap
 
-`build_logit_mask(grammar, id_to_token)` exists and is tested: given the current
-grammar state and the vocabulary, it returns the set of admissible token ids. It
-is **not wired into the generation loop**.
+`GrammarConstrainedProcessor` is wired into the generation loop: `stream_generate`
+takes an optional `logits_processor`, threaded from `GenerationConfig` through
+`backends.py` and `generation_service.py` to the `/v1/responses` route. The
+processor masks every token id whose text the grammar refuses, so a masked step
+cannot emit text that makes the reply unparseable.
 
-Why not: `stream_generate` (`generation/eager.py`) has no per-step hook. Adding one
-means threading a new parameter through `GenerationConfig`, `backends.py` (5 call
-sites), `generation_service.py` and the eager loop — a plumbing change across four
-files whose only effect is to make masked decoding possible. That is a reasonable
-next step, and this ADR records it as the remaining gap rather than pretending the
-guarantee is complete.
+Measured on the demo model, 20 seeded runs, `max_new_tokens=60`:
 
-Until then, the honest statement is: **the server checks, it does not prevent.**
+| setting        | valid JSON  |
+| -------------- | ----------- |
+| unconstrained  | **0 / 20**  |
+| grammar-masked | **17 / 20** |
+
+Not 100%, and the residue is understood rather than waved away:
+
+- **Truncation.** A run that hits the token budget mid-string produces a legal
+  *prefix* (the processor is behaving correctly) but not a complete document.
+  OpenAI reports this as `status="incomplete"`; here the post-generation check
+  catches it and the response is flagged.
+- **Token-boundary edge cases.** The automaton is character-based while the
+  vocabulary is token-based, so a token that *starts* legally but is only partly
+  consumed can leave slack the model exploits. Production constrained-decoders
+  (outlines, llguidance) solve this with token-level automata plus rollback; that
+  is a substantially larger piece of work and is not attempted here.
+
+So the contract is now: **the server prevents most malformed replies and checks
+every one of them.** That is stronger than the previous "we only check", and
+weaker than OpenAI's guarantee. Both halves are stated in the CHANGELOG.
+
+Two defects found while wiring it, both caught by measurement rather than review:
+
+1. `accept()` had a **side effect** — it called `_value_completed()` to decide
+   whether a top-level number was finished, which advanced the automaton. A
+   constrained run emitted `9`, the next `accept()` flipped the state to `done`,
+   every further token became illegal, the processor gave up, and an unconstrained
+   tail followed. `accept()` is now pure and a test pins that it does not mutate.
+2. Leading whitespace had to be **refused** at position 0. JSON permits it, so the
+   grammar allowed it, and a model free to emit spaces emits nothing else —
+   measured: 40 constrained tokens of pure blank.
 
 ## Consequences
 

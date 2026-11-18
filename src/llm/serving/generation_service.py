@@ -72,6 +72,7 @@ class ServingGenerationService:
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
         stop: str | list[str] | None = None,
+        logits_processor: Any = None,
     ) -> GenerationConfig:
         # Reject requests that cannot fit in the model's context window up
         # front, instead of letting the eager backend truncate the prompt to an
@@ -97,6 +98,7 @@ class ServingGenerationService:
             logit_bias=logit_bias,
             use_cache=True,
             stop=stop,
+            logits_processor=logits_processor,
         )
 
     def generate(
@@ -113,6 +115,7 @@ class ServingGenerationService:
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
         stop: str | list[str] | None = None,
+        logits_processor: Any = None,
     ) -> str:
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -124,6 +127,7 @@ class ServingGenerationService:
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
             stop=stop,
+            logits_processor=logits_processor,
         )
         return self.backend.generate(self.model, self.tokenizer, prompt, gen_config, request_id=request_id)
 
@@ -141,6 +145,7 @@ class ServingGenerationService:
         presence_penalty: float = 0.0,
         logit_bias: dict[int, float] | None = None,
         stop: str | list[str] | None = None,
+        logits_processor: Any = None,
     ):
         gen_config = self._generation_config(
             max_new_tokens=max_new_tokens,
@@ -152,6 +157,7 @@ class ServingGenerationService:
             presence_penalty=presence_penalty,
             logit_bias=logit_bias,
             stop=stop,
+            logits_processor=logits_processor,
         )
         yield from self.backend.stream(self.model, self.tokenizer, prompt, gen_config, request_id=request_id)
 
