@@ -131,7 +131,7 @@
 - [x] Pipeline Parallelism v2 — PP+DP 2D (`pp_size` + DP 组梯度平均) / microbatch 重叠 (`pp_n_microbatches>1`) / AMP (bf16) 与 gradient checkpointing 支持均已落地; 剩余: stage 按需物化
 - [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'`: `PPTPRuntime` 列内 stage 间 P2P 前向/反向 + TP 列内张量并行, 跨列 DP 梯度平均; 4/8 进程 CPU/gloo 引擎 e2e (修 PP3D 接收张量非叶子 `.grad` 崩溃)
 - [x] 真实 CUDA 分布式验证 — 8×A100-80GB 上 19 个 gpu-marked e2e 全绿: DDP 2/8-GPU, TP 2/4-GPU deep, TP+DP 2D 4/6-GPU, serving TP checkpoint, tensor-parallel 数值 parity; 修正 GPU 环境设备不一致 cluster
-- [x] DeepSpeed ZeRO 集成（原生 ZeRO Stage-1 以 `parallel_strategy='zero'` 落地：`ZeroOptimizer` 优化器状态分片 + 按 rank 分片 checkpoint（`collective_state_dict()` 汇总每个 rank 的分片，多 rank 断点续训已在 CPU/gloo 双 rank `engine.run()` e2e 验证）+ 引擎标准循环集成与 CPU/gloo 双 rank e2e；非外部 DeepSpeed 依赖；真实 CUDA 多卡验证顺延，见 [distributed guide](docs/guides/distributed.md)）
+- [x] DeepSpeed ZeRO 集成（原生实现，非 DeepSpeed 封装）：Stage-1 `ZeroOptimizer` 优化器状态分片 + 按 rank 分片 checkpoint（`collective_state_dict()` 汇总，多 rank 断点续训已在 CPU/gloo 双 rank `engine.run()` e2e 验证）；Stage-2 `zero_stage: 2` 额外分片梯度（见 [ADR-014](docs/adr/014-zero-stage-2-activation-sharding.md)），真实 2 GPU NCCL 上已与全量优化器 bit-exact 对齐。两者均集成进引擎标准循环，见 [distributed guide](docs/guides/distributed.md)
 
 ---
 
@@ -620,7 +620,7 @@
 - [x] TP + 数据并行 2D — `tp_size < world_size`: 行主序 `[DP][TP]` 网格 (TP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_dp_grads` (AVG) 平均 DP 组梯度; 2x2 / 2x3 / 4x2 网格 parity + 4/6-GPU 真实引擎 e2e 全绿
 - [x] Pipeline Parallelism — `parallel_strategy='pp'`: 按 `transformer_blocks` 切分 stage (stage 0 = embedding + 首块, 末 stage = final_norm + lm_head), `ScheduleGPipe` 驱动, 纯 pipeline 两进程 CPU/gloo bit-exact parity + 引擎 e2e 训练/保存/恢复; 强制 FP32 + LM-only 拒绝
 - [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致
-- [ ] 集成 DeepSpeed ZeRO (Stage 2/3) — Stage-1 与 Stage-2 均已落地并验证；
+- [x] 集成 DeepSpeed ZeRO (Stage 2/3) — Stage-1 与 Stage-2 均已落地并验证；
       Stage-3 未做。
       - Stage-1：原生 `ZeroOptimizer`，优化器状态分片 + 参数 all-gather。
       - Stage-2：`zero_stage: 2`，逐参数 `all_reduce(AVG)` 归约后丢弃非 owned
