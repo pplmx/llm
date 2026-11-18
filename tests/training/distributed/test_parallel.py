@@ -505,3 +505,67 @@ def test_setup_respects_launcher_master_env(monkeypatch):
     os.environ.setdefault("MASTER_PORT", config.master_port)
     assert os.environ["MASTER_ADDR"] == config.master_addr
     assert os.environ["MASTER_PORT"] == config.master_port
+
+
+# --- every strategy the config ACCEPTS must have an implementation branch ---
+#
+# ``TrainingConfig.parallel_strategy`` is validated by a regex, and
+# ``wrap_model_for_training`` dispatches on the same names with an
+# ``Unknown parallel_strategy`` fallback. The two lists are maintained
+# separately, so adding a strategy to the pattern without adding a branch (or
+# vice versa) makes a config value that validates and then fails at runtime —
+# after the process group is already up.
+#
+# The existing unknown-strategy test skips without CUDA, which is most machines;
+# this check is pure text and needs no GPU, so it cannot be skipped away.
+
+
+def test_the_config_pattern_and_the_dispatch_branches_agree():
+    """The accepted strategy set and the implemented set must be identical."""
+    import pathlib
+    import re
+
+    from llm.training.core.config import DistributedConfig
+
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+    source = (repo_root / "src" / "llm" / "training" / "distributed" / "parallel.py").read_text(encoding="utf-8")
+
+    branches = set(re.findall(r'parallel_strategy == "(\w+)"', source))
+
+    field = DistributedConfig.model_fields["parallel_strategy"]
+    pattern = next((meta.pattern for meta in field.metadata if getattr(meta, "pattern", None)), None)
+    assert pattern is not None, "parallel_strategy lost its validation pattern"
+
+    match = re.fullmatch(r"\^\(([a-z0-9|]+)\)\$", pattern)
+    assert match is not None, f"unexpected pattern shape: {pattern!r}"
+    accepted = set(match.group(1).split("|"))
+
+    assert accepted == branches, (
+        f"config accepts {sorted(accepted)} but wrap_model_for_training implements {sorted(branches)}; "
+        "a value in the difference validates at config load and only fails once distributed is set up"
+    )
+
+
+def test_the_rejection_message_lists_every_accepted_strategy():
+    """The ``Unknown parallel_strategy`` message must name all of them.
+
+    A user who typos a strategy reads this message to find the valid values; a
+    stale list sends them to another failure.
+    """
+    import pathlib
+    import re
+
+    from llm.training.core.config import DistributedConfig
+
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+    source = (repo_root / "src" / "llm" / "training" / "distributed" / "parallel.py").read_text(encoding="utf-8")
+
+    field = DistributedConfig.model_fields["parallel_strategy"]
+    pattern = next(meta.pattern for meta in field.metadata if getattr(meta, "pattern", None))
+    accepted = set(re.fullmatch(r"\^\(([a-z0-9|]+)\)\$", pattern).group(1).split("|"))
+
+    message_match = re.search(r"Unknown parallel_strategy '\{parallel_strategy\}'\. Expected ([^.]+)\.", source)
+    assert message_match is not None, "the rejection message changed shape"
+    listed = set(re.findall(r"'(\w+)'", message_match.group(1)))
+
+    assert listed == accepted, f"the error message names {sorted(listed)} but the config accepts {sorted(accepted)}"
