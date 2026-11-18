@@ -85,21 +85,8 @@ def _require_generation_service():
     return generation_service
 
 
-def _token_count(text: str) -> int:
-    """The generated token count for ``text`` (non-streaming responses).
-
-    The non-streaming routes used ``len(text)`` — a char-count proxy that is
-    exact for character-level tokenizers but wrong for HF/BPE tokenizers
-    (one token spans several chars), and it diverged from the streaming path,
-    which counts tokens as they are decoded (serving deep-dive
-    FINDING 4). Re-encode ``text`` with the serving tokenizer for
-    the true count; any tokenizer that is unset or fails to round-trip its own
-    output falls back to ``len(text)``.
-    """
-    service = generation_service
-    encoder = getattr(getattr(service, "tokenizer", None), "encode", None)
-    if encoder is None:
-        return len(text)
+def _plain_token_count(encoder: Any, text: str) -> int:
+    """Token count for ``text``, assuming it holds no special markers."""
     try:
         encoded = encoder(text)
     except KeyError, ValueError, TypeError, RuntimeError:
@@ -110,6 +97,62 @@ def _token_count(text: str) -> int:
     if numel is not None and getattr(encoded, "ndim", None) == 1:
         return int(numel())
     return len(text)
+
+
+def _token_count(text: str) -> int:
+    """The generated token count for ``text`` (non-streaming responses).
+
+    The non-streaming routes used ``len(text)`` — a char-count proxy that is
+    exact for character-level tokenizers but wrong for HF/BPE tokenizers
+    (one token spans several chars), and it diverged from the streaming path
+    (serving deep-dive FINDING 4). Re-encode ``text`` with the serving
+    tokenizer for the true count; a tokenizer that is unset or fails to
+    round-trip its own output falls back to ``len(text)``.
+
+    A SPECIAL MARKER *inside* mixed text is where re-encoding lies.
+    ``SimpleCharacterTokenizer.encode`` returns one id only when the whole
+    string IS a declared marker; for ``"a<BOS>b"`` it falls through to the
+    per-character loop and yields 7 ids for text generation produced as 3
+    tokens. Token counts feed BOTH ``usage.completion_tokens`` and the
+    ``finish_reason`` heuristic (``count >= max_tokens`` → ``"length"``), so the
+    inflation made a request that stopped early report "length" and claim more
+    tokens than it was allowed to produce — measured against a live server, 1 of
+    12 requests reported 34 tokens against a budget of 30.
+
+    Each marker occurrence counts as ONE token, and only the stretches between
+    markers are re-encoded — which is how the generator emitted them.
+    """
+    service = generation_service
+    tokenizer = getattr(service, "tokenizer", None)
+    encoder = getattr(tokenizer, "encode", None)
+    if encoder is None:
+        return len(text)
+
+    markers = [
+        marker
+        for marker in (
+            getattr(tokenizer, "bos_char", None),
+            getattr(tokenizer, "eos_char", None),
+            getattr(tokenizer, "pad_char", None),
+        )
+        if isinstance(marker, str) and marker and marker in text
+    ]
+    if not markers:
+        return _plain_token_count(encoder, text)
+
+    # Longest first, so a marker containing another one is not mis-split.
+    markers.sort(key=len, reverse=True)
+    total = 0
+    rest = text
+    for marker in markers:
+        occurrences = rest.count(marker)
+        if not occurrences:
+            continue
+        total += occurrences  # one token per occurrence
+        rest = rest.replace(marker, "")
+    if rest:
+        total += _plain_token_count(encoder, rest)
+    return total
 
 
 # Own thread pool for the streaming bridge instead of ``asyncio.to_thread``:

@@ -320,3 +320,106 @@ def test_batch_fill_ratio_tracks_the_engine_denominator():
         m.record_batch_fill_ratio(scheduled=scheduled, total_active_slots=total)
         value = m.batch_fill_ratio._value.get()
         assert value == expected, f"{scheduled}/{total} recorded {value}, expected {expected}"
+
+
+# --- token counting for text containing special markers --------------------
+#
+# ``SimpleCharacterTokenizer.encode`` collapses a declared marker to one id ONLY
+# when the whole string is that marker; mixed text falls through to the
+# per-character loop. Because ``_token_count`` (and with it both
+# ``usage.completion_tokens`` and the ``finish_reason`` heuristic) is derived by
+# re-encoding, a completion carrying a marker counted far too high — measured on
+# a live server, 1 in 12 requests reported 34 tokens against a budget of 30 and
+# was labelled "length".
+
+
+def _real_char_tokenizer():
+    """The serving tokenizer used by the demo configs (declares BOS/EOS/PAD).
+
+    ``<PAD>`` is registered in the vocabulary unconditionally; BOS/EOS only when
+    the corpus spells them out. The corpus below covers all three so the marker
+    scan is exercised on every branch.
+    """
+    from llm.tokenization.simple_tokenizer import SimpleCharacterTokenizer
+
+    return SimpleCharacterTokenizer(["abcxyz0123456789<BOS><EOS><PAD>"])
+
+
+def test_a_special_marker_counts_as_one_token_not_its_characters(monkeypatch):
+    """``"a<BOS>b"`` is three tokens, not seven.
+
+    Without the marker-aware path the re-encode returns the char ids of
+    ``'<','B','O','S','>'`` and the count inflates by four per marker.
+    """
+    from types import SimpleNamespace
+
+    from llm.serving.routers import generate as gen
+
+    tokenizer = _real_char_tokenizer()
+    monkeypatch.setattr(gen, "generation_service", SimpleNamespace(tokenizer=tokenizer))
+
+    # The plain path, for contrast: the same text with the marker removed costs
+    # one token per character either way.
+    assert gen._token_count("abc") == 3
+
+    assert gen._token_count("a<PAD>b") == 3, "the marker was expanded into its characters"
+    assert gen._token_count("<PAD>") == 1
+    assert gen._token_count("<PAD><PAD>") == 2, "each marker occurrence is one token"
+    assert gen._token_count("xy<PAD>") == 3
+
+
+def test_plain_text_counting_is_unchanged(monkeypatch):
+    """The marker path must not disturb text without markers."""
+    from types import SimpleNamespace
+
+    from llm.serving.routers import generate as gen
+
+    monkeypatch.setattr(
+        gen,
+        "generation_service",
+        SimpleNamespace(tokenizer=SimpleNamespace(encode=lambda t: [7] * len(t))),
+    )
+
+    assert gen._token_count("") == 0
+    assert gen._token_count("abcd") == 4
+
+
+def test_a_marker_free_tokenizer_keeps_the_plain_count(monkeypatch):
+    """A tokenizer without bos/eos/pad attributes must take the plain path.
+
+    The marker scan reads optional attributes; a custom tokenizer that does not
+    declare them must not crash and must not change the count.
+    """
+    from types import SimpleNamespace
+
+    from llm.serving.routers import generate as gen
+
+    monkeypatch.setattr(
+        gen,
+        "generation_service",
+        SimpleNamespace(tokenizer=SimpleNamespace(encode=lambda t: [1, 2, 3])),
+    )
+
+    assert gen._token_count("anything") == 3
+
+
+def test_the_count_never_exceeds_the_generated_budget(monkeypatch):
+    """The property the fix exists for: a marker cannot inflate past the budget.
+
+    A completion of ``budget`` tokens that happens to include markers must not
+    report more tokens than were generated — that is what flipped
+    ``finish_reason`` to "length" for requests that stopped early.
+    """
+    from types import SimpleNamespace
+
+    from llm.serving.routers import generate as gen
+
+    monkeypatch.setattr(gen, "generation_service", SimpleNamespace(tokenizer=_real_char_tokenizer()))
+
+    budget = 30
+    # 28 ordinary tokens plus two markers == exactly 30 generated tokens.
+    text = "a" * 28 + "<PAD><PAD>"
+    assert gen._token_count(text) == budget, (
+        f"a {budget}-token completion counted as {gen._token_count(text)}; the "
+        "finish_reason heuristic compares this against the budget"
+    )
