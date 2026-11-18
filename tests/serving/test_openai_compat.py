@@ -528,3 +528,72 @@ def test_every_reason_the_routers_emit_round_trips_through_the_schema():
     message = {"role": "assistant", "content": "hi"}
     for reason in sorted(reasons):
         ChatCompletionChoice(index=0, message=message, finish_reason=reason)  # must not raise
+
+
+# --- declared-but-unsupported OpenAI knobs must be REFUSED ----------------
+#
+# The schemas declare the OpenAI parameters this server cannot honour
+# (`tools`, `tool_choice`, `seed`, response chaining, ...) and reject them by
+# name, because silently dropping one returns a 200 whose behaviour differs from
+# what the client asked for. Nothing tested that contract, so a field could stop
+# being rejected — or a new one could be added to the schema without being added
+# to the rejection list — and the endpoint would quietly accept it.
+#
+# The same reason explains why ``ChatMessage.role`` admits only
+# ``system``/``user``/``assistant``: ``tool`` and ``function`` roles exist to
+# carry tool results, and this server does not implement tool calling.
+
+
+def _chat_request(**overrides):
+    from llm.serving.schemas import ChatCompletionRequest
+
+    payload = {"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    payload.update(overrides)
+    return ChatCompletionRequest(**payload)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value"),
+    [
+        # Exactly the three knobs ChatCompletionRequest declares as unsupported.
+        ("tools", [{"type": "function", "function": {"name": "f"}}]),
+        ("seed", 42),
+        ("n", 3),
+    ],
+)
+def test_unsupported_chat_parameters_are_refused_by_name(parameter, value):
+    """Each unsupported knob must fail validation and name itself in the error."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        _chat_request(**{parameter: value})
+
+    assert parameter in str(excinfo.value), (
+        f"the error for {parameter!r} does not name it, so a client cannot tell what to remove"
+    )
+
+
+def test_the_chat_message_role_set_excludes_tool_roles():
+    """Only the three plain-text roles are accepted, matching the missing tool support."""
+    from pydantic import ValidationError
+
+    from llm.serving.schemas import ChatMessage
+
+    for allowed in ("system", "user", "assistant"):
+        assert ChatMessage(role=allowed, content="x").role == allowed
+
+    for role in ("tool", "function", "developer"):
+        with pytest.raises(ValidationError):
+            ChatMessage(role=role, content="x")
+
+
+def test_responses_api_unsupported_knobs_are_refused_too():
+    """The Responses surface declares the same UNSUPPORTED knobs; they must refuse too."""
+    from pydantic import ValidationError
+
+    from llm.serving.schemas import ResponsesRequest
+
+    with pytest.raises(ValidationError) as excinfo:
+        ResponsesRequest(model="m", input="hi", tools=[{"type": "function"}])
+
+    assert "tools" in str(excinfo.value)
