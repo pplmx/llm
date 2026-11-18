@@ -904,6 +904,42 @@ class TestPublishedFormatScope:
         config = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
         assert config["model_type"] == "llama"
 
+    def test_the_documented_parameter_gap_reproduces_with_real_transformers(self, tmp_path):
+        """The docstring's ``ours=29632 vs theirs=37600`` must stay reproducible.
+
+        That pair of numbers is the concrete evidence behind the "this is a
+        self-roundtrip format, not a transformers-compatible one" warning. A
+        reader deciding whether to publish needs it to be true; if the model or
+        the emitted config changes, the caveat may no longer describe reality and
+        someone will trust the directory more than they should.
+
+        Skips when transformers is absent — the numbers can only be checked WITH
+        the external library, and a hard dependency on it just for this test
+        would be wrong (it is not in the ``compat`` extra).
+        """
+        transformers = pytest.importorskip(
+            "transformers", reason="the gap can only be measured against real transformers"
+        )
+
+        from llm.compat.hf_publisher import save_pretrained
+        from llm.models.decoder import DecoderModel
+
+        model = DecoderModel(
+            vocab_size=64, hidden_size=32, num_layers=2, num_heads=4, max_seq_len=32
+        )  # use_glu=False is the DecoderModel default -- the configuration the docstring quotes
+        ours = sum(p.numel() for p in model.parameters())
+        save_pretrained(model, tmp_path)
+
+        counter = transformers.AutoModelForCausalLM.from_pretrained(str(tmp_path), dtype=torch.float32)
+        theirs = sum(p.numel() for p in counter.parameters())
+
+        assert ours == 29632, f"the docstring quotes ours=29632; got {ours} — update the docstring or this test"
+        assert theirs == 37600, f"the docstring quotes theirs=37600; got {theirs}"
+        assert ours != theirs, (
+            "the two totals agree, which would mean the published directory builds an identical network "
+            "under transformers — the module docstring's scope warning would then be stale"
+        )
+
     def test_our_model_uses_layernorm_with_bias(self, tmp_path):
         """The structural difference from HF Llama: LayerNorm + bias, not RMSNorm.
 
