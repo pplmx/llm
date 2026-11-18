@@ -429,3 +429,97 @@ def test_per_rank_cursors_are_independent_across_a_resume(tmp_path, line_tokeniz
         assert len(heads[rank] + tail) == len(shard), (
             f"rank {rank}: resumed shard length {len(heads[rank] + tail)} != {len(shard)}"
         )
+
+
+# --- sharding must PARTITION the corpus ------------------------------------
+#
+# The existing shard test only asserts `len(rank0) > 0 and len(rank1) > 0`. A
+# shard formula that dropped half the corpus, or gave every rank everything,
+# would satisfy that. The property that actually matters is that the shards
+# PARTITION the corpus: their union is the whole thing, with no gap and no
+# overlap.
+#
+# Comparison is on TOKEN TUPLES, not decoded text: ``LineTokenizer.encode`` is
+# ``ord(char) % 50``, which is not injective, so it cannot be inverted. Distinct
+# source lines still give distinct token sequences here because the digits in
+# each line differ.
+
+
+def _token_chunks(dataset) -> list[tuple[int, ...]]:
+    """Every yielded chunk as a token tuple (LineTokenizer is 1 token/char)."""
+    return [tuple(int(token) for token in row["input_ids"]) for row in dataset]
+
+
+def _corpus_chunks(lines: list[str], tokenizer) -> list[tuple[int, ...]]:
+    """Tokenise the corpus the same way the dataset does, one line per chunk.
+
+    ``LocalLineTextSource`` yields ``line.strip()``, so the trailing newline is
+    NOT part of what reaches the tokenizer — which is why the expected chunks are
+    built from the stripped lines rather than the raw corpus lines.
+    """
+    return [tuple(tokenizer.encode(line.strip())) for line in lines]
+
+
+def test_ranks_partition_the_corpus_without_gaps_or_overlaps(tmp_path, line_tokenizer):
+    """Every corpus line must be produced by exactly one rank.
+
+    ``max_seq_len`` is set to one line's token length so each corpus line becomes
+    exactly one chunk, which makes the partition directly observable.
+    """
+    text_file = tmp_path / "corpus.txt"
+    lines = [f"line-{idx:02d}\n" for idx in range(8)]
+    text_file.write_text("".join(lines), encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    expected = _corpus_chunks(lines, line_tokenizer)
+    seq_len = len(expected[0])
+
+    world_size = 2
+    per_rank = [
+        _token_chunks(
+            StreamingTextDataset(source, line_tokenizer, max_seq_len=seq_len, rank=rank, world_size=world_size)
+        )
+        for rank in range(world_size)
+    ]
+    combined = [chunk for chunks in per_rank for chunk in chunks]
+
+    assert sorted(combined) == sorted(expected), (
+        f"the shards do not partition the corpus: {len(combined)} chunks vs {len(expected)} expected"
+    )
+    assert len(set(combined)) == len(combined), f"the shards overlap: {combined}"
+    for rank, chunks in enumerate(per_rank):
+        assert len(chunks) == len(set(chunks)), f"rank {rank} yielded a duplicate chunk"
+
+
+def test_a_single_rank_receives_the_whole_corpus(tmp_path, line_tokenizer):
+    """Control: world_size=1 must not lose anything to the modulo filter."""
+    text_file = tmp_path / "corpus.txt"
+    lines = [f"abc{idx}\n" for idx in range(5)]
+    text_file.write_text("".join(lines), encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    expected = _corpus_chunks(lines, line_tokenizer)
+
+    chunks = _token_chunks(
+        StreamingTextDataset(source, line_tokenizer, max_seq_len=len(expected[0]), rank=0, world_size=1)
+    )
+
+    assert sorted(chunks) == sorted(expected)
+
+
+def test_three_ranks_still_partition_the_corpus(tmp_path, line_tokenizer):
+    """An odd world size must not leave a remainder unassigned."""
+    text_file = tmp_path / "corpus.txt"
+    lines = [f"row-{idx:02d}\n" for idx in range(9)]
+    text_file.write_text("".join(lines), encoding="utf-8")
+    source = LocalLineTextSource(text_file)
+    expected = _corpus_chunks(lines, line_tokenizer)
+
+    world_size = 3
+    combined = [
+        chunk
+        for rank in range(world_size)
+        for chunk in _token_chunks(
+            StreamingTextDataset(source, line_tokenizer, max_seq_len=len(expected[0]), rank=rank, world_size=world_size)
+        )
+    ]
+
+    assert sorted(combined) == sorted(expected)
