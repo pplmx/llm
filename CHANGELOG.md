@@ -344,6 +344,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Spot-checked two ROADMAP `[x]` claims for actual availability** (quantization): a feature marked done but unusable is worse than an untested one, so the two most intricate completed entries were exercised end to end. Mixed-precision GPTQ works: `GPTQConfig(layer_policies=(LayerQuantPolicy(target_modules=('a',), bits=8),))` on a two-layer model produced `a.bits == 8` alongside `b.bits == 4`, i.e. the per-layer policy really reaches the algorithm. QLoRA's NF4 path works too, and its `NF4_LEVELS` table matches bitsandbytes' official values digit for digit, with a `block_size=64` round trip giving 9.4% relative error — the expected 4-bit range. One check of mine was WRONG and worth recording: I asserted the level table is symmetric (`levels == -levels.flip(0)`), which failed. NF4's 16 levels are the quantiles of a standard normal and include an exact `0.0` at index 7, so 15 non-zero values cannot pair up and that symmetry test is simply inapplicable — the table is correct. **No product defect and no code change.**
 
+
+- **A "coverage gap" in the distributed modules is a deliberate CI split, and the split is healthy** (testing): measuring per-module coverage put `training/distributed/` at the bottom — `tensor_parallel.py` 11.7%, `pp_tp.py` 12.0%, `pipeline.py` 23.7%, `parallel.py` 32.4%, `zero.py` 55.9% — which reads like undertested code. It is not: those tests carry `pytestmark = pytest.mark.heavy`, and `just test-fast` (the daily gate) excludes `heavy` by design, so their lines are simply invisible to a `test-fast` coverage run. Ran the gate they belong to instead: **`just test-heavy` = 86 passed, 3 skipped** (the three skips all "flash-attn not installed"), and `test_zero_optimizer.py` alone = 20 passed / 0 failed / 0 skipped including its two-process CPU-via-gloo cases, so `zero.py`'s `_sync` all-gather path IS exercised. **The lesson is about the metric, not the code**: a `test-fast` coverage report understates any module whose tests are marked heavy, and reading the low percentage as "untested" would have led to duplicating coverage that already exists. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
