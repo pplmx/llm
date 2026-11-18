@@ -291,8 +291,19 @@ class FlashAttention(nn.Module):
             if batch_indices is not None:
                 if start_pos is None:
                     raise ValueError("start_pos must be provided when using batch_indices for KV cache update.")
+                # ``has_past`` decides ``causal`` for the attention call below,
+                # so asserting it unconditionally made a PREFILL non-causal: a
+                # caller passing ``batch_indices`` for the first pass (empty
+                # cache) got full attention, where position 0 could see the last
+                # prompt token. Mirrors the identical fix in ``mha.py``; the
+                # serving engine escaped both only because it always supplies an
+                # explicit ``attn_mask``, which overrides ``causal``.
+                #
+                # Derive it from the positions actually being written: the batch
+                # has history iff some row starts past position 0. ``start_pos``
+                # is either an int or a ``[B, S]`` position grid.
                 k, v = kv_cache.update_at_indices(batch_indices, k, v, start_pos)
-                has_past = True
+                has_past = bool((start_pos.min() > 0).item()) if isinstance(start_pos, Tensor) else int(start_pos) > 0
             else:
                 k, v = kv_cache.update(k, v)
                 has_past = kv_cache.seq_len > seq_len
