@@ -22,7 +22,7 @@ Public surface:
 """
 
 from llm.export.gguf import build_gguf_exporter, export_to_gguf, load_gguf_model
-from llm.export.onnx import export_to_onnx, get_onnx_info, verify_onnx
+from llm.export.onnx import export_decoder_for_generation, export_to_onnx, get_onnx_info, verify_onnx
 from llm.export.registry import (
     EXPORT_REGISTRY,
     ExportBackendFactory,
@@ -39,6 +39,7 @@ __all__ = [
     "build_onnx_exporter",
     "build_torchscript_exporter",
     "ensure_exporters_registered",
+    "export_decoder_for_generation",
     "export_model",
     "export_to_gguf",
     "export_to_onnx",

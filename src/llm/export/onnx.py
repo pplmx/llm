@@ -284,3 +284,177 @@ def get_onnx_info(onnx_path: str | Path) -> dict:
         ],
         "file_size_mb": onnx_path.stat().st_size / (1024 * 1024),
     }
+
+
+class _CacheIOExporter(nn.Module):
+    """Present the decoder as a pure function of ``(ids, past_k, past_v)``.
+
+    The model's own cache is a mutable object (``KVCache`` writes into a
+    pre-allocated buffer), which an exported graph cannot express — the graph is
+    stateless. This adapter therefore rebuilds a :class:`FunctionalKVCache` per
+    layer from TENSORS, runs the model, and returns the updated cache as tensors
+    too. See ADR-016.
+
+    Cache tensors are stacked over layers as ``[layers, batch, num_kv_heads,
+    seq_len, head_dim]``, so one input pair describes the whole model.
+    """
+
+    def __init__(self, model: nn.Module, *, max_seq_len: int) -> None:
+        super().__init__()
+        self.model = model
+        self.max_seq_len = max_seq_len
+
+    def forward(self, ids: torch.Tensor, past_k: torch.Tensor, past_v: torch.Tensor):
+        from llm.core.kv_cache import FunctionalKVCache
+
+        caches = []
+        for layer in range(past_k.size(0)):
+            cache = FunctionalKVCache(past_k.size(1), self.max_seq_len, past_k.size(2), past_k.size(4))
+            cache._k_parts = [past_k[layer]]
+            cache._v_parts = [past_v[layer]]
+            cache._seq_len = past_k[layer].size(2)
+            caches.append(cache)
+
+        output = self.model(ids, use_cache=True, kv_caches=caches)
+        logits = output[0] if isinstance(output, tuple) else output
+        present_k = torch.stack([torch.cat(cache._k_parts, dim=2) for cache in caches])
+        present_v = torch.stack([torch.cat(cache._v_parts, dim=2) for cache in caches])
+        return logits, present_k, present_v
+
+
+def export_decoder_for_generation(
+    model: nn.Module,
+    output_dir: str | Path,
+    *,
+    prompt_len: int = 8,
+    max_seq_len: int | None = None,
+    opset_version: int = 17,
+    verbose: bool = False,
+) -> dict[str, Path]:
+    """Export a decoder as a PREFILL graph and a DECODE graph (ADR-016).
+
+    A single graph cannot serve both phases: the model derives ``start_pos`` and
+    ``has_past`` from ``kv_caches[0].seq_len``, which are PYTHON values, so a
+    tracer freezes them into constants with the traced shape baked in. Measured:
+    a graph traced on a prefill never correctly decodes (steps diverge by ~0.34),
+    while a graph traced at its own phase's shape matches eager to <5e-7. Two
+    graphs, each traced at its characteristic shape, is the standard ONNX/TensorRT
+    decoder pattern and is what this function writes.
+
+    Both graphs take the same three inputs — ``ids``, ``past_k``, ``past_v`` — and
+    return ``logits``, ``present_k``, ``present_v``, with the cache stacked over
+    layers. Callers chain them: run prefill once with an empty cache, then pass
+    each step's ``present_*`` back as the next ``past_*``.
+
+    Args:
+        model: The decoder, in eval mode.
+        output_dir: Directory to write ``prefill.onnx`` and ``decode.onnx`` into.
+        prompt_len: Sequence length the prefill graph is traced at. Prefill uses
+            a causal mask internally, so any length works — this only fixes the
+            traced dummy.
+        max_seq_len: Cache capacity. Defaults to the model's context window.
+        opset_version: ONNX opset (17 matches the rest of this module).
+        verbose: Forwarded to the exporter.
+
+    Returns:
+        ``{"prefill": Path, "decode": Path}``.
+
+    Raises:
+        ValueError: If the model exposes nothing that looks like a context window
+            and ``max_seq_len`` is not given.
+    """
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    if max_seq_len is None:
+        max_seq_len = _model_context_window(model)
+        if max_seq_len is None:
+            raise ValueError(
+                "cannot infer the model's context window; pass max_seq_len explicitly. "
+                "The cache capacity has to be known at export time."
+            )
+
+    # Resolve the cache geometry from the model rather than guessing: a wrong
+    # num_kv_heads silently produces a graph whose attention shapes disagree.
+    num_kv_heads, head_dim = _cache_geometry(model)
+    layers = len(getattr(model, "transformer_blocks", []))
+
+    adapter = _CacheIOExporter(model, max_seq_len=max_seq_len).eval()
+
+    dynamic_axes = {
+        "ids": {0: "batch", 1: "seq_len"},
+        "past_k": {1: "batch", 3: "past_len"},
+        "past_v": {1: "batch", 3: "past_len"},
+        "logits": {0: "batch", 1: "seq_len"},
+        "present_k": {1: "batch", 3: "total_len"},
+        "present_v": {1: "batch", 3: "total_len"},
+    }
+
+    written: dict[str, Path] = {}
+    # (past_len, new_len) per graph: prefill starts empty and takes the prompt;
+    # decode has a past and appends exactly one token.
+    phases = {"prefill": (0, prompt_len), "decode": (prompt_len, 1)}
+    with torch.no_grad(), warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=torch.jit.TracerWarning)
+        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*TorchScript.*ONNX.*")
+        for name, (past_len, new_len) in phases.items():
+            path = directory / f"{name}.onnx"
+            ids = torch.zeros(1, new_len, dtype=torch.long)
+            empty_k = torch.zeros(layers, 1, num_kv_heads, past_len, head_dim)
+            empty_v = torch.zeros(layers, 1, num_kv_heads, past_len, head_dim)
+            torch.onnx.export(
+                adapter,
+                (ids, empty_k, empty_v),
+                str(path),
+                input_names=["ids", "past_k", "past_v"],
+                output_names=["logits", "present_k", "present_v"],
+                dynamic_axes=dynamic_axes,
+                opset_version=opset_version,
+                do_constant_folding=True,
+                verbose=verbose,
+                dynamo=False,
+            )
+            written[name] = path
+
+    if verbose:
+        logger.info("Exported prefill/decode graphs to %s", directory)
+    return written
+
+
+def _model_context_window(model: nn.Module) -> int | None:
+    """Best-effort read of the model's ``max_seq_len``."""
+    for holder in (model, getattr(model, "model", None)):
+        if holder is None:
+            continue
+        for attr in ("max_seq_len",):
+            value = getattr(holder, attr, None)
+            if isinstance(value, int):
+                return value
+        config = getattr(holder, "config", None)
+        value = getattr(config, "max_seq_len", None) if config is not None else None
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _cache_geometry(model: nn.Module) -> tuple[int, int]:
+    """Resolve ``(num_kv_heads, head_dim)`` from the model's attention module."""
+    blocks = getattr(model, "transformer_blocks", None)
+    if not blocks:
+        raise ValueError("export_decoder_for_generation needs a decoder exposing transformer_blocks")
+    attention = getattr(blocks[0], "attention", None) or getattr(blocks[0], "self_attn", None)
+    if attention is None:
+        raise ValueError("the first transformer block exposes no attention module to size the KV cache")
+
+    num_kv_heads = getattr(attention, "num_kv_heads", None)
+    embedding = getattr(model, "embedding_layer", None)
+    token_embeddings = getattr(embedding, "token_embeddings", None)
+    hidden_size = getattr(token_embeddings, "embedding_dim", None)
+    num_heads = getattr(attention, "num_heads", None)
+    if num_kv_heads is None or hidden_size is None or num_heads is None:
+        raise ValueError(
+            "cannot resolve the KV cache geometry: attention needs num_kv_heads/num_heads and the "
+            f"embedding needs embedding_dim (got num_kv_heads={num_kv_heads}, "
+            f"embedding_dim={hidden_size}, num_heads={num_heads})"
+        )
+    return int(num_kv_heads), int(hidden_size) // int(num_heads)

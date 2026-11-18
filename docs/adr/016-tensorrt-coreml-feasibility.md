@@ -110,17 +110,33 @@ token 要把整个前缀重新跑一遍。以 prompt=8、新增 16 token 为例�
    `mha.py` 一行没改就能用。与 `KVCache` 在真实模型上 **bit-exact 一致**
    （prompt + 3 个 decode step，四个步骤全部 `0.000e+00`）。
 
-   **仍未打通的部分**（如实记录）：完整「显式 cache I/O 的增量解码导出」还差一步。
-   显式 cache 作为图输入/输出**能 trace**，prefill 数值正确（4.8e-7），但**解码步骤
-   偏差 ~0.34**。根因已定位：`mha.py:345` 的 `is_causal=use_causal if not has_past
-   else False` 由 Python 布尔决定，tracer 把它固化成常量（有 TracerWarning 明示），
-   于是解码时仍沿用 prefill 的因果设置。显然的修法是改传显式 additive mask，实测撞上
-   SDPA 的广播形状错误
-   （`output with shape [1, 2, 4, 4] doesn't match the broadcast shape [4, 2, 4, 4]`），
-   未解决。
+   **已完成（第一步落地）**：`src/llm/export/onnx.py` 新增
+   `export_decoder_for_generation()`，导出**两张图**（`prefill.onnx` + `decode.onnx`）。
+   端到端验证：prefill 一次 + 4 个 decode step，逐步误差
 
-   即：cache 的**函数式化**已完成并验证；**因果掩码在导出图中的动态表达**是剩余的
-   阻塞点。
+   | step        | max\|eager − onnx\| |
+   | ----------- | ------------------- |
+   | 0 (prefill) | 4.768e-07           |
+   | 1           | 2.384e-07           |
+   | 2           | 2.384e-07           |
+   | 3           | 2.384e-07           |
+   | 4           | 2.384e-07           |
+
+   cache 正确累积到 8 个位置。
+
+   **为什么必须两张图**（这是排查出的关键事实）：`DecoderModel.forward` 的
+   `start_pos` 与 `has_past` 都来自 `kv_caches[0].seq_len`，是 **Python 值**，tracer
+   会把它们连同 trace 时的形状一起固化成常量。单独看「`is_causal` 被固化」并不致命
+   —— 实测一张按 **decode 形状** trace 的图，数值是对的（4.8e-7）。真正致命的是
+   **拿 prefill 形状 trace 的图去解码**：解码步骤偏差 ~0.34。因此按各自阶段的形状
+   各导一张，是标准 ONNX/TensorRT decoder 做法，也是本函数的实现方式。
+
+   排查中试过但**不需要**的两条路，记录以免重走：
+    - 显式 additive mask：rank-2 会撞 SDPA 广播错误
+   （`[1,2,4,4]` vs `[4,2,4,4]`），**rank-4 `[1,1,Sq,Sk]` 可用**且与 `has_past`
+   路径 bit-exact（`0.000e+00`），但它并不能单独修好单图方案；
+    - 显式 `position_ids`：与内部推导 `start_pos` bit-exact（`0.000e+00`），同样不改变
+   单图方案的结论。
 2. **再谈 TensorRT**。前置条件已具备（算子全覆盖、opset 17、cu130 wheel 存在），
    主要工作量在 engine 构建 / profile 管理（动态 shape 需要 `optimization_profile`）。
 3. **Core ML 单独评估**，且必须在 Apple 硬件上验证；本机做不了。
