@@ -353,6 +353,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Ran the GPU gate — the last unverified suite — and every GPU-marked test passes** (testing): `just test-gpu` (`gpu or multi_gpu or need_gpu or full_cluster`) = **32 passed, 4 skipped, 0 failed** in 7m28s, measured on GPUs 4-7 while they carried ~49 GB of unrelated load, so the passes are not a quiet-machine artifact. All four skips are "flash-attn not installed", the same environmental reason as everywhere else. Run individually the markers split 4 (`gpu`) + 31 (`multi_gpu`/`need_gpu`) + 1 (`full_cluster`) = 36 collected, which is exactly the collection count, so nothing was silently not-run. **Every gate this repo defines has now been executed in this session and is green**: `test-fast` 4802 passed / 19 skipped, `test-heavy` 86 passed / 3 skipped, `test-e2e` 58 passed / 1 skipped, `test-gpu` 32 passed / 4 skipped, plus `check` and `docs`. **No product defect and no code change.**
 
+
+- **`llm migrate-ckpt`'s clobber refusal told CLI users to pass an argument the CLI does not have** (cli/checkpoint): re-running the command on an already-converted checkpoint exited 1 with *"Split layout already exists ... — pass `overwrite=True` to replace"*. That message comes from `checkpoint/format.py`, which serves BOTH the programmatic API (`overwrite=True`) and the command (`--overwrite`), and it named only the Python parameter — so a CLI user was instructed to pass something their surface does not accept. It now names both. The exit code was already correct (verified as a real `1`, not the `0` a `| tail` pipeline reports), and `--overwrite` / `--in-place` / `--dry-run` / `--verify` all behave correctly end to end against real legacy blobs (three sidecars written, verification passed, legacy deleted under `--in-place`). Regression test added: reverting the message to the Python-only wording turns it red. **Found by exercising the CLI entry points** — `llm --version`, `--help`, and each of the six subcommands' `--help` all render, which this session had not checked before.
+
+### Added
+
 ### Added
 
 ### Added

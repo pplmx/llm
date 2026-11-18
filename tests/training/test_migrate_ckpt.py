@@ -454,3 +454,26 @@ class TestMigrateCkptCli:
         assert isinstance(result.exception, SystemExit), f"raw exception escaped the CLI: {result.exception!r}"
         combined = strip_ansi(result.stderr or "") + strip_ansi(result.stdout or "")
         assert "model_state" in combined.lower()
+
+    # --- the clobber refusal must name a remedy a CLI user can act on ---------
+    #
+    # ``CheckpointMigrationError`` is raised from the FORMAT layer, which serves both
+    # the programmatic API (``overwrite=True``) and ``llm migrate-ckpt`` (the
+    # ``--overwrite`` flag). The message used to name only the Python parameter, so a
+    # user who hit it from the CLI was told to pass something the CLI does not accept.
+    # Measured against the real command: ``llm migrate-ckpt model.pt`` on an
+    # already-converted checkpoint printed "pass overwrite=True" and exited 1.
+
+    def test_the_clobber_refusal_names_the_cli_flag_too(self, legacy_checkpoint: Path, tmp_path: Path):
+        """The error must mention BOTH the API parameter and the CLI flag."""
+        convert_legacy_checkpoint_to_split(legacy_checkpoint)
+
+        with pytest.raises(CheckpointMigrationError) as excinfo:
+            convert_legacy_checkpoint_to_split(legacy_checkpoint)
+
+        message = str(excinfo.value)
+        assert "overwrite=True" in message, "the programmatic parameter must be named"
+        assert "--overwrite" in message, (
+            "a CLI user reading this message must be told the flag; naming only "
+            f"'overwrite=True' sends them looking for an argument the CLI lacks. Got: {message}"
+        )

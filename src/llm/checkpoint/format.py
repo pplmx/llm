@@ -571,8 +571,9 @@ def convert_legacy_checkpoint_to_split(
     if not overwrite and any(p.exists() for p in (safetensors_path, meta_path, extra_state_path)):
         raise CheckpointMigrationError(
             f"Split layout already exists at {stem.name}{{.{SAFETENSORS_SUFFIX},"
-            f".{META_SUFFIX},{EXTRA_STATE_SUFFIX}}} — pass overwrite=True to replace "
-            "(or move the existing sidecars aside first)."
+            f".{META_SUFFIX},{EXTRA_STATE_SUFFIX}}} — pass overwrite=True "
+            "(or the CLI's --overwrite flag) to replace, or move the existing "
+            "sidecars aside first."
         )
 
     # Load the legacy blob. ``weights_only=True``: the migration
