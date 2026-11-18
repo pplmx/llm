@@ -123,7 +123,7 @@ def test_log_interval_controls_which_batches_are_logged(monkeypatch, tmp_path):
     engine = _lm_engine_off_cuda(monkeypatch, tmp_path, log_interval=2)
 
     logged: list[int] = []
-    engine._log_batch_stats = lambda epoch, batch_idx, num_batches, metrics: logged.append(batch_idx)
+    engine._log_batch_stats = lambda epoch, batch_idx, num_batches, metrics, **kwargs: logged.append(batch_idx)
 
     engine._run_epoch(0)
 
@@ -298,3 +298,83 @@ def test_the_batch_counter_is_independent_of_the_optimizer_step_counter(tmp_path
         "the micro-batch counter and the optimizer-step counter are the same value; "
         "per-batch telemetry would still collide"
     )
+
+
+# --- interior accumulation micro-steps have NO gradient norm ---------------
+#
+# ``grad_norm`` is computed only where clipping runs, i.e. at optimizer-step
+# boundaries. Interior micro-steps used to record a ``0.0`` placeholder, which
+# the batch log then printed as a genuine "Grad Norm: 0.00" — indistinguishable
+# from a vanishing gradient. Measured with accum=2 over 5 batches, the collected
+# history was [0.0, 1.1013, 0.0, 0.7844, 1.1946]: two of five were the injected
+# placeholder, so 40% of the log lines claimed zero gradients.
+
+
+def _accum_config(tmp_path, accum: int) -> Config:
+    return Config(
+        training=TrainingConfig(
+            task="regression",
+            epochs=1,
+            batch_size=2,
+            num_samples=10,
+            lr=1e-3,
+            output_dir=str(tmp_path / "output"),
+        ),
+        model=ModelConfig(hidden_size=16, num_layers=1),
+        optimization=OptimizationConfig(amp_dtype="auto", gradient_accumulation_steps=accum, use_compile=False),
+        logging=LoggingConfig(log_interval=1),
+    )
+
+
+def test_interior_micro_steps_do_not_record_a_zero_gradient_norm(tmp_path):
+    """Only real measurements may enter the gradient-norm history."""
+    config = _accum_config(tmp_path, accum=2)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    engine._run_epoch(0)
+
+    norms = engine.performance_monitor.gradient_norms
+    # 5 batches at accum=2 -> 3 step boundaries, so 3 real measurements.
+    assert len(norms) == 3, f"expected 3 step-boundary norms, got {len(norms)}: {norms}"
+    assert all(value > 0.0 for value in norms), (
+        f"a placeholder 0.0 was recorded as a gradient norm: {norms}; "
+        "0.0 is a real possible norm and reads as a vanished gradient"
+    )
+
+
+def test_without_accumulation_every_batch_records_a_norm(tmp_path):
+    """Control: accum=1 has a step boundary per batch, so no n/a and no zeros."""
+    config = _accum_config(tmp_path, accum=1)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    engine._run_epoch(0)
+
+    norms = engine.performance_monitor.gradient_norms
+    assert len(norms) == 5, f"expected one norm per batch, got {len(norms)}: {norms}"
+    assert all(value > 0.0 for value in norms)
+
+
+def test_the_batch_log_says_na_when_this_batch_measured_no_gradient(tmp_path, caplog):
+    """An interior micro-step must print 'n/a', not a borrowed or zero value."""
+    import logging as logging_module
+
+    config = _accum_config(tmp_path, accum=2)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    with caplog.at_level(logging_module.INFO):
+        engine._run_epoch(0)
+
+    lines = [record.getMessage() for record in caplog.records if "Grad Norm:" in record.getMessage()]
+    assert len(lines) == 5, f"expected 5 batch log lines, got {len(lines)}"
+    values = [line.split("Grad Norm: ")[1].split(" |")[0] for line in lines]
+    assert values.count("n/a") == 2, (
+        f"expected exactly 2 interior micro-steps to report n/a, got {values}; "
+        "5 batches at accum=2 have 3 step boundaries"
+    )
+    assert "0.00" not in values, f"a placeholder zero was printed as a gradient norm: {values}"

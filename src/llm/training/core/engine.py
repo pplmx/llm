@@ -1045,11 +1045,16 @@ class TrainingEngine:
                 if not step_skipped:
                     self.global_step += 1
             else:
-                # Calculate grad norm even if not stepping? Or skip?
-                # Usually we track grad norm of the step.
-                # Here we just use 0.0 or skip logging grad norm for micro-steps?
-                # Logic: We only log roughly.
-                grad_norm = torch.tensor(0.0)
+                # Interior micro-step of a gradient-accumulation window: no
+                # optimizer step, so no clipping happened and no gradient norm
+                # was computed. There is no value to report — a ``0.0``
+                # placeholder is worse than nothing, because 0.0 is a REAL
+                # possible norm and reads as "the gradients vanished". Measured
+                # with accum=2 over 5 batches: the collected norms were
+                # [0.0, 1.1013, 0.0, 0.7844, 1.1946] — two of five were the
+                # injected placeholder, and the batch log printed
+                # "Grad Norm: 0.00" for 40% of its lines.
+                grad_norm = None
 
             # ``loss`` here is the RAW micro-batch loss (the accum scaling only
             # went into ``scaled_loss`` for backprop), so step-end callbacks
@@ -1068,10 +1073,13 @@ class TrainingEngine:
             # Performance monitoring
             self.performance_monitor.log_batch_time(time.time() - batch_start_time)
             self.performance_monitor.log_loss(batch_loss)
-            self.performance_monitor.log_gradient_norm(grad_norm.item())
+            if grad_norm is not None:
+                # Only step boundaries produced a norm; interior micro-steps
+                # deliberately contribute nothing (see above).
+                self.performance_monitor.log_gradient_norm(grad_norm.item())
 
             if (batch_idx + 1) % self.config.logging.log_interval == 0 and self.rank == 0:
-                self._log_batch_stats(epoch, batch_idx, num_batches, metrics)
+                self._log_batch_stats(epoch, batch_idx, num_batches, metrics, grad_norm=grad_norm)
             self._run_callbacks("on_batch_end", epoch=epoch, batch_idx=batch_idx)
 
         # an empty training epoch must never silently return
@@ -1157,19 +1165,26 @@ class TrainingEngine:
 
         return global_avg_loss
 
-    def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics):
+    def _log_batch_stats(self, epoch, batch_idx, num_batches, metrics, *, grad_norm=None):
         if self.optimizer is None:
             raise RuntimeError("standard-loop components are required")
         lr = self.optimizer.param_groups[0]["lr"]
         mem_alloc, mem_cached = self.performance_monitor.get_current_gpu_memory()
-        grad_norm = self.performance_monitor.gradient_norms[-1] if self.performance_monitor.gradient_norms else 0.0
+        # ``grad_norm`` is the norm THIS batch produced, passed in by the caller.
+        # Reading ``gradient_norms[-1]`` instead was wrong twice over: an interior
+        # micro-step has no norm of its own, so the history either had an injected
+        # ``0.0`` placeholder (printed as a genuine "Grad Norm: 0.00") or, once
+        # the placeholder was removed, the PREVIOUS step's norm, which read as if
+        # the current batch had measured it. ``n/a`` is the honest answer when
+        # this batch took no optimizer step.
         batch_time = self.performance_monitor.get_avg_batch_time()
 
         metrics_str = " | ".join([f"{k}: {v:.4f}" for k, v in metrics.items()])
 
+        grad_norm_str = "n/a" if grad_norm is None else f"{grad_norm:.2f}"
         log_msg = (
             f"Epoch {epoch + 1:2d} | Batch {batch_idx + 1:4d}/{num_batches} | "
-            f"{metrics_str} | Grad Norm: {grad_norm:.2f} | "
+            f"{metrics_str} | Grad Norm: {grad_norm_str} | "
             f"LR: {lr:.6f} | B-Time: {batch_time * 1000:.1f}ms | "
             f"Mem: {mem_alloc:.2f}/{mem_cached:.2f} GB"
         )
