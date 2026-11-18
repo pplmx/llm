@@ -206,9 +206,14 @@ def test_awq_search_never_worse_on_uniform_activations():
 def test_awq_search_matches_packed_dequantization():
     """The search's error model equals the packed layer's actual dequantization.
 
-    `_group_quantize_dequant` is the exact math used both inside the search
-    and at packing time, so the searched scale is honest about the final
-    layer's behavior.
+    `_group_quantize_dequant` is the standalone transcription of that math, used
+    here as the reference. It is NOT called by the search or by packing: both
+    inline the same expressions (`_search_scale` builds its groups with
+    ``min(s + gs, in_f)`` and computes ``delta`` / ``recon`` itself;
+    `_quantize_linear_with_awq` packs from its own per-group scale). This test
+    therefore proves the three stay in agreement — the reference and the packed
+    layer are compared directly, and the search feeds the scale both of them
+    use.
     """
     from llm.quantization._awq_layer import AWQQuantizedLinear
     from llm.quantization.awq import AWQConfig, AWQQuantizer, _group_quantize_dequant
@@ -402,3 +407,55 @@ def test_awq_search_is_locally_optimal_by_exhaustion():
                 f"channel {channel} -> {candidate} lowers the objective "
                 f"{baseline:.9f} -> {improved:.9f}, so the search did not minimize it"
             )
+
+
+def test_group_quantize_dequant_covers_a_non_divisible_row():
+    """The helper must quantize the WHOLE row, trailing columns included.
+
+    It used ``range(in_f // group_size)``, which drops the tail when the group
+    does not divide the row: measured on a [16, 100] row with group_size=32, the
+    last 4 columns came back as 0.0 — 4% of every affected row silently zeroed
+    instead of quantized.
+
+    The production entry point rejects that shape up front (``AWQQuantizer``
+    __init__, same rule GPTQ uses), so this pins the helper's own contract and
+    keeps its grouping identical to ``_search_scale``'s, which already builds
+    groups with ``min(s + gs, in_f)``.
+    """
+    from llm.quantization.awq import _group_quantize_dequant
+
+    torch.manual_seed(0)
+    w = torch.randn(16, 100)
+
+    out = _group_quantize_dequant(w, bits=4, group_size=32)
+
+    covered = (out != 0).any(dim=0)
+    assert int(covered.sum()) == 100, (
+        f"only {int(covered.sum())} of 100 columns were quantized; the trailing "
+        f"{100 - int(covered.sum())} were left at zero"
+    )
+
+
+def test_group_quantize_dequant_matches_the_search_grouping():
+    """The helper and the search must agree on where groups END.
+
+    ``_search_scale`` slices ``min(s + gs, in_f)``; the helper used integer
+    division. On a divisible row both agree, which is why the difference went
+    unnoticed — this pins the agreement on the divisible case the production
+    path actually accepts.
+    """
+    from llm.quantization.awq import _group_quantize_dequant
+
+    torch.manual_seed(1)
+    w = torch.randn(8, 64)
+    qmax = 7
+
+    out = _group_quantize_dequant(w, bits=4, group_size=32)
+
+    expected = torch.zeros_like(w)
+    for start in range(0, 64, 32):
+        group = w[:, start : min(start + 32, 64)]
+        delta = (group.abs().max(dim=1, keepdim=True)[0] / qmax).clamp(min=1e-8)
+        expected[:, start : start + group.shape[1]] = torch.round(group / delta).clamp(-qmax - 1, qmax) * delta
+
+    assert torch.equal(out, expected)

@@ -100,12 +100,18 @@ def _group_quantize_dequant(
     _out_f, in_f = w.shape
 
     effective_group_size = in_f if group_size == -1 or group_size > in_f else group_size
-    n_groups = in_f // effective_group_size
 
+    # Slice with ``min(s + gs, in_f)``, the way ``_search_scale`` builds its
+    # groups, NOT ``range(in_f // gs)``: when the group does not divide the row,
+    # integer division drops the trailing columns and leaves them at zero.
+    # Measured on a [16, 100] row with group_size=32: the last 4 columns came
+    # back as 0.0, i.e. 4% of every affected row silently zeroed. The production
+    # entry point rejects that shape up front (``AWQQuantizer.__init__``, same
+    # rule GPTQ uses), so this guards the helper itself and keeps its grouping
+    # identical to the search's.
     dequant = torch.zeros_like(w)
-    for g in range(n_groups):
-        s = g * effective_group_size
-        e = s + effective_group_size
+    for s in range(0, in_f, effective_group_size):
+        e = min(s + effective_group_size, in_f)
         w_g = w[:, s:e]
         scale = (w_g.abs().max(dim=1, keepdim=True)[0] / qmax).clamp(min=1e-8)
         dequant[:, s:e] = torch.round(w_g / scale).clamp(-qmax - 1, qmax) * scale
