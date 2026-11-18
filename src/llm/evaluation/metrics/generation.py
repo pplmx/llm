@@ -116,7 +116,15 @@ class BleuMetric(BaseMetric):
                 "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
             ) from exc
 
-        refs = [[r] for r in references]
+        # ONE reference STREAM holding every sentence, not one stream per
+        # sentence. sacrebleu reads the outer list as "reference index" and the
+        # inner list as "sentences", so ``[[r] for r in references]`` declares N
+        # streams of length 1 — it then only scores the sentences the FIRST
+        # stream covers and silently drops the rest. Measured on a two-sentence
+        # corpus: ``sys_len`` was 6 (the first sentence alone) instead of 11, and
+        # the score read 37.99 where the true corpus BLEU is 33.76. Any corpus
+        # with more than one sentence was scoring its first sentence only.
+        refs = [list(references)]
         bleu = sacrebleu.corpus_bleu(predictions, refs)
         return {"bleu": bleu.score}
 
@@ -151,6 +159,9 @@ class ChrFMetric(BaseMetric):
                 "sacrebleu is an optional evaluation dependency. Install with `pip install 'llm[eval]'`."
             ) from exc
 
-        refs = [[r] for r in references]
+        # One reference STREAM (see the note in ``BleuMetric.compute``): the
+        # per-sentence nesting made sacrebleu score only the first sentence's
+        # worth of the corpus.
+        refs = [list(references)]
         chrf = sacrebleu.corpus_chrf(predictions, refs)
         return {"chrf": chrf.score}

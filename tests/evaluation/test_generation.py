@@ -288,3 +288,114 @@ class TestMetricsRejectMisalignedInputs:
         with pytest.raises(ValueError, match="must be aligned") as excinfo:
             RougeMetric().compute(["a", "b"], ["x"])
         assert "zip()" not in str(excinfo.value), "the bare zip() message gives the user nothing to act on"
+
+
+# --- values, not just shapes ----------------------------------------------
+#
+# The tests above check that the metrics run and return plausible ranges. None
+# of them pins the VALUE against the library that computes it, so a change to
+# the aggregation (e.g. corpus-level instead of per-sample mean, or the wrong
+# RougeScorer flag) would leave them green. These compare against the reference
+# libraries the metrics wrap.
+
+
+def test_bleu_matches_sacrebleu_corpus_bleu():
+    """The score must equal ``sacrebleu.corpus_bleu`` for a MULTI-sentence corpus.
+
+    The reference stream has to be passed as one list of sentences. The previous
+    form (``[[r] for r in references]``) declared one stream per sentence, so
+    sacrebleu scored the first sentence and dropped the rest -- on this corpus it
+    reported 37.99 against a true corpus BLEU of 33.76.
+    """
+    sacrebleu = pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+
+    predictions = ["the cat sat on the mat", "a dog runs very fast"]
+    references = ["the cat is on the mat", "a dog runs quite fast"]
+
+    got = BleuMetric().compute(predictions, references)["bleu"]
+    expected = sacrebleu.corpus_bleu(predictions, [references]).score
+
+    assert abs(got - expected) < 1e-9, f"BLEU {got} != sacrebleu {expected}"
+    # Guard the failure MODE: the broken form reports a different number, so this
+    # assertion fails if the per-sentence nesting comes back.
+    per_sentence_streams = sacrebleu.corpus_bleu(predictions, [[r] for r in references]).score
+    assert abs(got - per_sentence_streams) > 1e-3, (
+        "every sentence must contribute; scoring only the first gives "
+        f"{per_sentence_streams:.4f}, the same as the reported {got:.4f}"
+    )
+
+
+def test_bleu_scores_every_sentence_in_the_corpus():
+    """A second, wildly different sentence must move the score.
+
+    With the per-sentence nesting this stayed at the first sentence's value no
+    matter what followed.
+    """
+    sacrebleu = pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+
+    good = "the quick brown fox jumps over the lazy dog at dawn today"
+    second_predictions = ["completely unrelated output with zero overlap whatsoever"]
+    second_references = ["an entirely different target sentence written independently"]
+
+    one_only = BleuMetric().compute([good], [good])["bleu"]
+    with_second = BleuMetric().compute([good, *second_predictions], [good, *second_references])["bleu"]
+
+    # Precondition: the single-sentence score really is 100, so any drop is the
+    # second sentence being counted.
+    assert abs(sacrebleu.corpus_bleu([good], [[good]]).score - one_only) < 1e-9
+    assert abs(with_second - one_only) > 1e-3, (
+        f"adding a zero-overlap sentence left BLEU at {with_second:.4f} (the first sentence's "
+        f"{one_only:.4f}); the corpus is not being scored as a whole"
+    )
+
+
+def test_bleu_scores_an_identical_corpus_at_100():
+    """Perfect match is 100 — the sharpest end-to-end sanity check."""
+    pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+
+    text = "the quick brown fox jumps over the lazy dog near the river bank"
+    assert abs(BleuMetric().compute([text], [text])["bleu"] - 100.0) < 1e-6
+
+
+def test_rouge_averages_per_sample_fmeasures():
+    """Each dimension is the MEAN of per-sample F-measures, not a pooled score.
+
+    Pooling would give the same answer on a single sample and a different one
+    here, which is exactly the change this pins.
+    """
+    rouge_scorer = pytest.importorskip("rouge_score.rouge_scorer", reason="rouge_score is an optional eval dependency")
+    pytest.importorskip("nltk", reason="nltk is an optional eval dependency (rouge stemmer)")
+
+    predictions = ["the cat sat on the mat today", "a dog runs very fast indeed"]
+    references = ["the cat is on the mat today", "a dog runs quite fast indeed"]
+
+    got = RougeMetric().compute(predictions, references)
+    scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
+
+    for rouge_type, key in (("rouge1", "rouge-1"), ("rouge2", "rouge-2"), ("rougeL", "rouge-l")):
+        per_sample = [
+            scorer.score(ref, pred)[rouge_type].fmeasure for pred, ref in zip(predictions, references, strict=True)
+        ]
+        expected = sum(per_sample) / len(per_sample)
+        assert abs(got[key] - expected) < 1e-9, f"{key}: {got[key]} != mean of {per_sample}"
+
+
+def test_chrf_matches_sacrebleu_corpus_chrf():
+    """The score must equal ``sacrebleu.corpus_chrf`` exactly."""
+    sacrebleu = pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+
+    predictions = ["the cat sat on the mat", "a dog runs fast"]
+    references = ["the cat is on the mat", "a dog runs quickly"]
+
+    got = ChrFMetric().compute(predictions, references)["chrf"]
+    expected = sacrebleu.corpus_chrf(predictions, [references]).score
+
+    assert abs(got - expected) < 1e-9, f"chrF {got} != sacrebleu {expected}"
+
+
+def test_chrf_spans_its_full_range():
+    """Identical text is 100 and disjoint text is 0 — both ends, not just one."""
+    pytest.importorskip("sacrebleu", reason="sacrebleu is an optional eval dependency")
+
+    assert abs(ChrFMetric().compute(["hello world"], ["hello world"])["chrf"] - 100.0) < 1e-6
+    assert ChrFMetric().compute(["xyz"], ["abc"])["chrf"] == 0.0
