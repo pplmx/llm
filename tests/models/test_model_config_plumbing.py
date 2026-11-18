@@ -229,3 +229,113 @@ def test_rope_theta_accepts_the_normal_value():
     assert model is not None
     torch.manual_seed(0)
     assert ModelFactory.from_config(_build(rope_theta=500000.0)) is not None
+
+
+def test_rope_theta_without_use_rope_warns_it_is_inert():
+    """``rope_theta`` does nothing while ``use_rope`` is off — say so.
+
+    The RoPE table is built only inside ``if use_rope`` (mha.py:84-96), so the
+    base frequency is never read otherwise. Measured on two otherwise-identical
+    models: rope_theta 10000 vs 500000 gives BIT-IDENTICAL logits at
+    ``use_rope=False`` and differs (max|d| = 1.5e-2) at ``use_rope=True``. A config
+    that looks like it set a LongRoPE-style base therefore silently does nothing
+    unless the switch is on.
+
+    Same inert-sub-option class ``TrainingConfig`` already warns about; this is
+    the ``ModelConfig`` equivalent, which had no such check.
+    """
+    import logging
+
+    logger = logging.getLogger("llm.models.config")
+    records: list[str] = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = _Grab()
+    logger.addHandler(handler)
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    try:
+        _build(rope_theta=500000.0)  # use_rope defaults to False
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+
+    assert any("rope_theta" in message and "no effect" in message for message in records), (
+        f"setting rope_theta with use_rope=False produced no warning; got: {records}"
+    )
+
+
+def test_rope_theta_with_use_rope_is_silent():
+    """The legitimate pairing must not warn."""
+    import logging
+
+    logger = logging.getLogger("llm.models.config")
+    records: list[str] = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = _Grab()
+    logger.addHandler(handler)
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    try:
+        _build(use_rope=True, rope_theta=500000.0)
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+
+    assert not any("no effect" in message for message in records), f"unexpected warning: {records}"
+
+
+def test_the_default_config_does_not_warn_about_rope_theta():
+    """Defaults stay quiet: the warning is about lost intent, not about a value."""
+    import logging
+
+    logger = logging.getLogger("llm.models.config")
+    records: list[str] = []
+
+    class _Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = _Grab()
+    logger.addHandler(handler)
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    try:
+        _build()  # nothing explicit
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(previous_level)
+
+    assert not any("rope_theta" in message for message in records), f"a default config warned: {records}"
+
+
+def test_rope_theta_actually_matters_only_when_use_rope_is_on():
+    """The FACT the warning rests on, measured through the real model.
+
+    Without this, the warning could be describing something that no longer holds
+    (e.g. if positional encoding started reading the base unconditionally).
+    """
+    ids = torch.randint(0, 64, (1, 8))
+
+    def logits(**kwargs):
+        torch.manual_seed(0)
+        model = ModelFactory.from_config(_build(**kwargs)).eval()
+        with torch.no_grad():
+            return model(ids)
+
+    off_a = logits(use_rope=False, rope_theta=10000.0)
+    off_b = logits(use_rope=False, rope_theta=500000.0)
+    assert torch.equal(off_a, off_b), (
+        "rope_theta changed the output with use_rope=False; the inertness warning would be wrong"
+    )
+
+    on_a = logits(use_rope=True, rope_theta=10000.0)
+    on_b = logits(use_rope=True, rope_theta=500000.0)
+    assert not torch.equal(on_a, on_b), "rope_theta made no difference even with use_rope=True; the wire-up changed"

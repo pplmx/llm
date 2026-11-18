@@ -15,10 +15,13 @@ existing imports keep working.
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class ModelConfig(BaseModel):
@@ -182,6 +185,23 @@ class ModelConfig(BaseModel):
                 f"attn_impl='{self.attn_impl}' does not support use_rope=True. "
                 f"RoPE is wired for 'mha' and 'flash_attn' only; switch "
                 f"attn_impl or set model.use_rope=False."
+            )
+
+        # ``rope_theta`` is only read while BUILDING the RoPE table, which happens
+        # inside ``if use_rope`` (mha.py:84-96). With RoPE off it is inert, and
+        # measured: two otherwise-identical models with rope_theta 10000 vs
+        # 500000 produce bit-identical logits at ``use_rope=False`` and differ
+        # (max|d| = 1.5e-2) at ``use_rope=True``. A config that looks like it set
+        # a LongRoPE-style base therefore does nothing unless the switch is on —
+        # the same silent-inertness class ``TrainingConfig`` warns about for
+        # ``use_*`` sub-options. Warn only when the user EXPLICITLY wrote it, so
+        # the default stays quiet.
+        if not self.use_rope and "rope_theta" in self.model_fields_set:
+            logger.warning(
+                "model.rope_theta=%s has no effect because model.use_rope is False: the RoPE "
+                "table is only built when use_rope is on. Set use_rope=True to apply it, or "
+                "remove rope_theta from the config.",
+                self.rope_theta,
             )
         # ALiBi is mutually exclusive with RoPE and (in this milestone) only
         # wired for the mha backend (ALiBi milestone).
