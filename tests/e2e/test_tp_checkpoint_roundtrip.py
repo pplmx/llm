@@ -21,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import socket
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -76,13 +75,6 @@ ROUNDTRIP_JOIN_TIMEOUT_S = 480
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
-
-
 def _release_parent_cuda_caches() -> None:
     if not torch.cuda.is_available():
         return
@@ -132,7 +124,16 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
         # the current CUDA device; spawned ranks default to GPU 0 → all ranks
         # collide on GPU 0 / "same GPU/Partition").
         torch.cuda.set_device(rank % torch.cuda.device_count())
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = dist.TCPStore(
+            os.environ["MASTER_ADDR"],
+            int(os.environ["MASTER_PORT"]),
+            world_size,
+            is_master=False,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        dist.init_process_group(
+            backend="nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S
+        )
         dev = torch.device(f"cuda:{rank % torch.cuda.device_count()}")
 
         model = _tiny_model(ctx, device=dev)
@@ -240,11 +241,12 @@ def _run_roundtrip(tmp_path: Path, world_size: int) -> None:
     if len(gpu_devices) < world_size:
         pytest.skip(f"need at least {world_size} free GPUs (TP checkpoint roundtrip)")
     _release_parent_cuda_caches()
-    port = _free_port()
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["NCCL_DEBUG"] = "WARN"
-    os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+    # Parent-owned store keeps the port bound for the whole spawn (see
+    # tests/support/distributed.py).
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
+    _set_master_env(store.port)
 
     ctx = {"vocab_size": 112, "ckpt_dir": str(tmp_path / "ckpts")}
     manager = mp.Manager()
@@ -260,6 +262,7 @@ def _run_roundtrip(tmp_path: Path, world_size: int) -> None:
             raise TimeoutError(f"TP checkpoint roundtrip spawn exceeded {ROUNDTRIP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -317,7 +320,16 @@ def _engine_checkpoint_worker(rank: int, world_size: int, device_indices: list[i
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = dist.TCPStore(
+            os.environ["MASTER_ADDR"],
+            int(os.environ["MASTER_PORT"]),
+            world_size,
+            is_master=False,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        dist.init_process_group(
+            backend="nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S
+        )
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx)
@@ -382,6 +394,16 @@ def _spawn_world(
 ) -> mp.managers.DictProxy:
     """Spawn ``world_size`` copies of ``worker`` on the given devices and wait
     for them all (kill on timeout); returns the shared results dict."""
+    # One store per world: the parent creates it on port 0 so the OS assigns an
+    # ephemeral port that stays bound for the whole spawn, then publishes it via
+    # MASTER_PORT for the workers to join. Owning it HERE (rather than in each
+    # caller) means the lifetime cannot be got wrong -- a store closed before the
+    # children join leaves them waiting on a dead port. See
+    # tests/support/distributed.py for the measured race this removes.
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
+    _set_master_env(store.port)
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(worker, args=(world_size, device_indices, *worker_args, results), nprocs=world_size, join=False)
@@ -395,6 +417,7 @@ def _spawn_world(
             raise TimeoutError(f"{what} spawn exceeded {timeout_s}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -418,7 +441,6 @@ def _run_engine_checkpoint(tmp_path: Path, world_size: int, tp_size: int) -> Non
     ctx: dict = {"tp_size": tp_size, "ckpt_dir": str(tmp_path / "ckpts")}
     _prepare_engine_fixtures(tmp_path, ctx)
 
-    _set_master_env(_free_port())
     _spawn_world(
         world_size, device_indices, _engine_checkpoint_worker, (ctx,), ROUNDTRIP_JOIN_TIMEOUT_S, "engine checkpoint"
     )
@@ -458,7 +480,16 @@ def _engine_resume_stage_one_worker(rank: int, world_size: int, device_indices: 
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = dist.TCPStore(
+            os.environ["MASTER_ADDR"],
+            int(os.environ["MASTER_PORT"]),
+            world_size,
+            is_master=False,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        dist.init_process_group(
+            backend="nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S
+        )
         torch.manual_seed(42 + rank)
 
         config = _build_engine_config(ctx, epochs=1)
@@ -486,7 +517,16 @@ def _engine_resume_stage_two_worker(rank: int, world_size: int, device_indices: 
         # Bind this rank to its GPU BEFORE init_process_group (NCCL attaches to
         # the current device; spawned ranks default to GPU 0 → "same GPU").
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = dist.TCPStore(
+            os.environ["MASTER_ADDR"],
+            int(os.environ["MASTER_PORT"]),
+            world_size,
+            is_master=False,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        dist.init_process_group(
+            backend="nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S
+        )
         torch.manual_seed(42 + rank)
 
         # Same 2D grid, same data; resume from the stage-1 epoch checkpoint stem.
@@ -525,7 +565,6 @@ def _run_engine_resume_roundtrip(tmp_path: Path, world_size: int, tp_size: int) 
 
     # Stage 1: train 1 epoch, save, then destroy the process group.
     _release_parent_cuda_caches()
-    _set_master_env(_free_port())
     stage1 = _spawn_world(
         world_size, device_indices, _engine_resume_stage_one_worker, (ctx,), ROUNDTRIP_JOIN_TIMEOUT_S, "resume stage-1"
     )
@@ -534,7 +573,6 @@ def _run_engine_resume_roundtrip(tmp_path: Path, world_size: int, tp_size: int) 
     # Stage 2: a fresh world resumes from the epoch_1 checkpoint on disk.
     ctx["resume_path"] = str(Path(ctx["ckpt_dir"]) / "epoch_1")
     _release_parent_cuda_caches()
-    _set_master_env(_free_port())
     stage2 = _spawn_world(
         world_size, device_indices, _engine_resume_stage_two_worker, (ctx,), ROUNDTRIP_JOIN_TIMEOUT_S, "resume stage-2"
     )

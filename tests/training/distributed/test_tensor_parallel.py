@@ -15,7 +15,6 @@ These tests need >= 2 GPUs (NCCL). They are skipped automatically otherwise.
 from __future__ import annotations
 
 import os
-import socket
 import time
 from datetime import timedelta
 
@@ -73,14 +72,6 @@ TP_JOIN_TIMEOUT_S = 360
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
 
 
-def _free_port() -> int:
-    """Bind an ephemeral port so consecutive TP tests do not share MASTER_PORT."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
-
-
 def _release_parent_cuda_caches() -> None:
     if not torch.cuda.is_available():
         return
@@ -93,13 +84,34 @@ def _release_parent_cuda_caches() -> None:
             continue
 
 
-def _setup_tp_env() -> int:
-    port = _free_port()
+def _setup_tp_env(world_size: int):
+    """Publish a port a PARENT-OWNED store holds; return the store.
+
+    The caller must keep it alive until every child has joined -- it is what
+    keeps the port bound. The old contract returned the port number alone, which
+    was racy: the port was free from the moment ``_free_port()`` closed its
+    socket, and two suites running concurrently could be handed the same one
+    (see tests/support/distributed.py for the measurements).
+    """
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(store.port)
     os.environ["NCCL_DEBUG"] = "WARN"
     os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
-    return port
+    return store
+
+
+def _env_store(world_size: int):
+    """Worker-side non-master store over the parent's published port."""
+    return dist.TCPStore(
+        os.environ["MASTER_ADDR"],
+        int(os.environ["MASTER_PORT"]),
+        world_size,
+        is_master=False,
+        timeout=PG_COLLECTIVE_TIMEOUT_S,
+    )
 
 
 def _build_model(
@@ -197,7 +209,13 @@ def _parity_worker(rank: int, world_size: int, device_indices: list[int], result
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         # Identical weights on every rank: same CPU seed -> same init.
@@ -275,7 +293,7 @@ def _run_spawn_parity(worker, world_size: int) -> None:
         pytest.skip(f"need at least {world_size} free GPUs")
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    _setup_tp_env()
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -296,6 +314,7 @@ def _run_spawn_parity(worker, world_size: int) -> None:
             raise TimeoutError(f"TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
 
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
@@ -327,7 +346,13 @@ def _flash_parity_worker(
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="flash_attn", use_rope=use_rope, num_kv_heads=num_kv_heads).to(dev)
@@ -394,11 +419,7 @@ def _run_flash_parity(world_size: int, *, use_rope: bool = False, num_kv_heads: 
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
 
-    port = _free_port()
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    os.environ["NCCL_DEBUG"] = "WARN"
-    os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -418,6 +439,7 @@ def _run_flash_parity(world_size: int, *, use_rope: bool = False, num_kv_heads: 
             raise TimeoutError(f"flash TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -464,7 +486,13 @@ def _mla_parity_worker(rank: int, world_size: int, device_indices: list[int], re
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(attn_impl="mla").to(dev)
@@ -528,7 +556,7 @@ def _run_mla_parity(world_size: int) -> None:
         pytest.skip(f"need at least {world_size} free GPUs (MLA TP parity)")
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    _setup_tp_env()
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -548,6 +576,7 @@ def _run_mla_parity(world_size: int) -> None:
             raise TimeoutError(f"MLA TP parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -571,7 +600,13 @@ def _wrap_worker(rank: int, world_size: int, device_indices: list[int], results)
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -617,7 +652,7 @@ def _run_wrap(world_size: int) -> None:
         pytest.skip(f"need at least {world_size} free GPUs")
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    _setup_tp_env()
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -632,6 +667,7 @@ def _run_wrap(world_size: int) -> None:
             raise TimeoutError(f"TP wrap spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -667,7 +703,13 @@ def _parity_2d_worker(rank: int, world_size: int, device_indices: list[int], res
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model().to(dev)
@@ -770,7 +812,7 @@ def _run_parity_2d(world_size: int, tp_size: int, min_free_bytes: int = TP_MIN_F
         pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D)")
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    _setup_tp_env()
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -790,6 +832,7 @@ def _run_parity_2d(world_size: int, tp_size: int, min_free_bytes: int = TP_MIN_F
             raise TimeoutError(f"TP+DP 2D parity spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -850,7 +893,13 @@ def _wrap_2d_worker(rank: int, world_size: int, device_indices: list[int], resul
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         tp_size = world_size // 2
@@ -904,7 +953,7 @@ def _run_wrap_2d(world_size: int) -> None:
         pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D wrap)")
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    _setup_tp_env()
+    store = _setup_tp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -919,6 +968,7 @@ def _run_wrap_2d(world_size: int) -> None:
             raise TimeoutError(f"TP+DP 2D wrap spawn exceeded {TP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
@@ -1171,7 +1221,13 @@ def test_three_d_rank_groups_selection():
 def _moe_roundtrip_worker(rank: int, world_size: int, results) -> None:
     """MoE expert-parallel checkpoint boundary on CPU (gloo)."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="gloo",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device("cpu")
         ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
         model = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
@@ -1247,7 +1303,13 @@ def _moe_dead_rank_worker(rank: int, world_size: int, results) -> None:
     hang this test protects against; collapsed routing is the MoE norm).
     """
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="gloo",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device("cpu")
         # 4 experts / 2 ranks, top_k=1, ONE token -> exactly one rank is dead.
         model = _build_model(num_experts=4, top_k=1, mlp_impl="moe").to(dev)
@@ -1277,7 +1339,7 @@ def test_tp_moe_dead_rank_no_deadlock_cpu():
     and step-boundary collectives must complete uniformly across ranks.
     Regression guard for the expert-parallel deadlock (collapsed routing).
     """
-    _setup_tp_env()
+    store = _setup_tp_env(2)  # owns the port; must outlive the children
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(_moe_dead_rank_worker, args=(2, results), nprocs=2, join=False)
@@ -1289,6 +1351,7 @@ def test_tp_moe_dead_rank_no_deadlock_cpu():
             for p in context.processes:
                 p.terminate()
             pytest.fail("MoE dead-rank backward timed out (deadlock)")
+    del store
     for rank in range(2):
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
 
@@ -1302,7 +1365,7 @@ def test_tp_moe_state_dict_roundtrip_cpu():
     ``llm serve`` / resume rely on) and loading it back must leave the TP
     forward unchanged.
     """
-    _setup_tp_env()
+    store = _setup_tp_env(2)  # owns the port; must outlive the children
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(_moe_roundtrip_worker, args=(2, results), nprocs=2, join=False)
@@ -1314,6 +1377,7 @@ def test_tp_moe_state_dict_roundtrip_cpu():
             for p in context.processes:
                 p.terminate()
             pytest.fail("MoE CPU roundtrip timed out (deadlock?)")
+    del store
     for rank in range(2):
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
 
@@ -1334,7 +1398,13 @@ def _moe_parity_worker(rank: int, world_size: int, device_indices: list[int], re
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device;
         # spawned ranks default to GPU 0 → "same GPU" collision).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device(f"cuda:{device_index}")
 
         ref = _build_model(num_experts=4, top_k=2, mlp_impl="moe").to(dev)
@@ -1403,7 +1473,13 @@ def _clip_global_worker(rank: int, world_size: int, results) -> None:
     """Global-norm clip parity: every rank clips by the FULL
     model norm, not its own shard's local norm."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="gloo",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
 
         class _Pair(nn.Module):
             def __init__(self) -> None:
@@ -1456,7 +1532,7 @@ def _clip_global_worker(rank: int, world_size: int, results) -> None:
 def test_clip_grad_norm_tp_global_norm_over_two_ranks():
     """Global L2 clip parallels clip_grad_norm_ on the concatenated model."""
 
-    _setup_tp_env()
+    store = _setup_tp_env(2)  # owns the port; must outlive the children
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(_clip_global_worker, args=(2, results), nprocs=2, join=False)
@@ -1470,6 +1546,7 @@ def test_clip_grad_norm_tp_global_norm_over_two_ranks():
             raise TimeoutError("clip-grad-norm-tp spawn exceeded timeout")
         if context.join(timeout=remaining):
             break
+    del store
     assert results["success"], results.get("error")
     # Compare the GLOBAL clip against clip_grad_norm_ on the FULL model.
     coef = 6.0 / (float(results["clipped_norm"]) + 1e-6)
@@ -1489,7 +1566,13 @@ def _stage0_tp_forward_worker(rank: int, world_size: int, results) -> None:
     restore the full hidden state inside the stage).
     """
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="gloo",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         dev = torch.device("cpu")
         model = _build_model(layers=4).to(dev)  # 4 blocks, mha, non-GQA
         torch.manual_seed(999)
@@ -1522,7 +1605,7 @@ def _stage0_tp_forward_worker(rank: int, world_size: int, results) -> None:
 @pytest.mark.quick
 def test_stage_tp_forward_parity_two_process_cpu():
     """TP-sharding a pipeline stage preserved its forward (2 ranks, gloo/CPU)."""
-    _setup_tp_env()
+    store = _setup_tp_env(2)  # owns the port; must outlive the children
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(_stage0_tp_forward_worker, args=(2, results), nprocs=2, join=False)
@@ -1536,6 +1619,7 @@ def test_stage_tp_forward_parity_two_process_cpu():
             raise TimeoutError("stage-TP forward parity spawn exceeded timeout")
         if context.join(timeout=remaining):
             break
+    del store
     assert results["success"], results.get("error")
     for rank in (0, 1):
         assert results[f"ok_{rank}"], f"rank {rank} stage-TP forward diverged from reference"

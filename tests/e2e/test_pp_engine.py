@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import socket
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -91,13 +90,6 @@ class _SFTDictDataModule(DummyLMDataModule):
         loader, sampler = super().train_dataloader(rank, world_size, device)
         loader.collate_fn = _dict_collate
         return loader, sampler
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
 
 
 def _build_config(
@@ -168,7 +160,14 @@ def _worker(rank: int, world_size: int, ctx: dict, results) -> None:
     try:
         # Force the CPU path so the run is deterministic regardless of GPUs.
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
-        dist.init_process_group("gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = dist.TCPStore(
+            os.environ["MASTER_ADDR"],
+            int(os.environ["MASTER_PORT"]),
+            world_size,
+            is_master=False,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
+        dist.init_process_group("gloo", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
         torch.manual_seed(42 + rank)  # the launcher's per-rank seed sequence
         ckpt_dir = ctx["checkpoint_dir"]
         pp_size = ctx.get("pp_size")
@@ -268,9 +267,14 @@ def _run_pp_engine_e2e(
     task_cls: type | None = None,
     dict_batch: bool = False,
 ) -> None:
-    port = _free_port()
+    # The store owns the port from allocation to close, so no other test can be
+    # handed the same one; it must outlive the children (see
+    # tests/support/distributed.py).
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(store.port)
     ckpt_dir = str(tmp_path / "pp_checkpoints")
 
     manager = mp.Manager()
@@ -318,6 +322,7 @@ def _run_pp_engine_e2e(
             raise TimeoutError(f"PP engine e2e exceeded {PP_ENGINE_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     results = dict(results)
     assert len(results) == world_size, f"expected {world_size} ranks, got {len(results)}"
     for rank, payload in results.items():

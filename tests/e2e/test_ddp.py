@@ -8,7 +8,6 @@ They will be automatically skipped if the required number of GPUs is not availab
 from __future__ import annotations
 
 import os
-import socket
 import time
 from datetime import timedelta
 
@@ -36,14 +35,6 @@ DDP_JOIN_TIMEOUT_S = 120
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=100)
 
 
-def _free_port() -> int:
-    """Bind an ephemeral port so consecutive DDP tests do not share MASTER_PORT."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
-
-
 def _release_parent_cuda_caches() -> None:
     """Drop parent-process CUDA caches so spawn workers are less likely to deadlock."""
     if not torch.cuda.is_available():
@@ -57,15 +48,35 @@ def _release_parent_cuda_caches() -> None:
             continue
 
 
-def setup_ddp_env() -> int:
-    """Configure process-group env vars and return the chosen master port."""
-    port = _free_port()
+def setup_ddp_env(world_size: int):
+    """Publish a port a PARENT-OWNED store holds, and hand the store back.
+
+    Returns the store, not the port: the store is what keeps the port bound, so
+    the caller must hold it until every child has joined. Returning the number
+    alone was the old contract and it was racy -- the port was free from the
+    moment ``_free_port()`` closed its socket (see
+    ``tests/support/distributed.py``).
+    """
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(store.port)
     os.environ["NCCL_DEBUG"] = "WARN"
     # Fail fast instead of hanging forever when one rank dies during init.
     os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
-    return port
+    return store
+
+
+def _env_store(world_size: int):
+    """Worker-side non-master store over the parent's published port."""
+    return dist.TCPStore(
+        os.environ["MASTER_ADDR"],
+        int(os.environ["MASTER_PORT"]),
+        world_size,
+        is_master=False,
+        timeout=PG_COLLECTIVE_TIMEOUT_S,
+    )
 
 
 def ddp_test_worker(rank, world_size, device_indices, config, results):
@@ -78,7 +89,13 @@ def ddp_test_worker(rank, world_size, device_indices, config, results):
         torch.cuda.set_device(device_index)
 
         # Initialize distributed
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
 
         device = torch.device(f"cuda:{device_index}")
 
@@ -130,7 +147,7 @@ def _run_ddp(world_size: int, device_indices: list[int], config: dict) -> None:
     """Spawn DDP workers with a join timeout so a stuck NCCL init fails the test."""
     assert all(index is not None for index in device_indices)
     _release_parent_cuda_caches()
-    setup_ddp_env()
+    store = setup_ddp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -153,6 +170,8 @@ def _run_ddp(world_size: int, device_indices: list[int], config: dict) -> None:
             raise TimeoutError(f"DDP spawn exceeded {DDP_JOIN_TIMEOUT_S}s on devices {device_indices}")
         if context.join(timeout=remaining):
             break
+
+    del store
 
     for rank in range(world_size):
         assert rank in results, f"Rank {rank} produced no result (devices={device_indices})"
@@ -333,7 +352,13 @@ def _ddp_weight_consistency_worker(rank, world_size, device_indices, results):
         device_index = device_indices[rank]
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
-        _dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        _dist.init_process_group(
+            backend="nccl",
+            store=_env_store(world_size),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         device = torch.device(f"cuda:{device_index}")
 
         # Exactly the framework's per-rank seed sequence.
@@ -384,7 +409,7 @@ def test_ddp_ranks_share_identical_initial_weights():
     world_size = 2
     device_indices = [d.index for d in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
-    setup_ddp_env()
+    store = setup_ddp_env(world_size)  # owns the port; must outlive the children
 
     manager = mp.Manager()
     results = manager.dict()
@@ -405,6 +430,8 @@ def test_ddp_ranks_share_identical_initial_weights():
             raise TimeoutError(f"DDP spawn exceeded {DDP_JOIN_TIMEOUT_S}s on devices {device_indices}")
         if context.join(timeout=remaining):
             break
+
+    del store
 
     for rank in range(world_size):
         assert rank in results, f"Rank {rank} produced no result (devices={device_indices})"

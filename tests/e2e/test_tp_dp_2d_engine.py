@@ -25,7 +25,6 @@ import hashlib
 import json
 import math
 import os
-import socket
 import time
 import traceback
 from datetime import timedelta
@@ -69,13 +68,6 @@ ENGINE_2D_JOIN_TIMEOUT_S = 480
 # the init_process_group call sites). Mirrors DistributedConfig's
 # collective_timeout_seconds for the harness's hand-rolled PGs.
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=60)
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
 
 
 def _release_parent_cuda_caches() -> None:
@@ -171,6 +163,13 @@ def _engine_2d_worker(rank: int, world_size: int, device_indices: list[int], ctx
         torch.cuda.set_device(device_index)
         dist.init_process_group(
             backend="nccl",
+            store=dist.TCPStore(
+                os.environ["MASTER_ADDR"],
+                int(os.environ["MASTER_PORT"]),
+                world_size,
+                is_master=False,
+                timeout=PG_COLLECTIVE_TIMEOUT_S,
+            ),
             rank=rank,
             world_size=world_size,
             # Bound every collective: the library path uses
@@ -266,9 +265,13 @@ def _run_engine_2d(
         for item in items:
             f.write(json.dumps(item) + "\n")
 
-    port = _free_port()
+    # Parent-owned store keeps the port bound for the whole spawn (see
+    # tests/support/distributed.py).
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(store.port)
     os.environ["NCCL_DEBUG"] = "WARN"
     os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
 
@@ -311,6 +314,7 @@ def _run_engine_2d(
             )
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(world_size):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], (
@@ -370,7 +374,19 @@ def test_engine_tp_dp_2d_wide_grid_six_gpu(tmp_path):
 def _pure_tp_metric_worker(rank: int, world_size: int, ctx: dict, results) -> None:
     """Pure TP (tp_size == world_size == 2) on CPU/gloo: report the epoch loss."""
     try:
-        dist.init_process_group(backend="gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="gloo",
+            store=dist.TCPStore(
+                os.environ["MASTER_ADDR"],
+                int(os.environ["MASTER_PORT"]),
+                world_size,
+                is_master=False,
+                timeout=PG_COLLECTIVE_TIMEOUT_S,
+            ),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         torch.manual_seed(42 + rank)
 
         config = _build_config(ctx, backend="gloo", parallel_strategy="tp", tp_size=world_size)
@@ -441,9 +457,9 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
         "tp_size": 2,
     }
 
-    port = _free_port()
+    store = dist.TCPStore("127.0.0.1", 0, 2, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S)
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
+    os.environ["MASTER_PORT"] = str(store.port)
     manager = mp.Manager()
     results = manager.dict()
     context = mp.spawn(_pure_tp_metric_worker, args=(2, ctx, results), nprocs=2, join=False)
@@ -461,6 +477,7 @@ def test_pure_tp_reports_true_metric_loss_not_divided_by_world(tmp_path):
             )
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(2):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], (

@@ -25,7 +25,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import socket
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -74,13 +73,6 @@ def _clear_serving_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("LLM_SERVING_"):
             monkeypatch.delenv(key, raising=False)
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
 
 
 def _set_master_env(port: int) -> None:
@@ -178,7 +170,19 @@ def _train_tp_worker(rank: int, world_size: int, device_indices: list[int], ctx:
         device_index = device_indices[rank]
         # Bind this rank to its GPU BEFORE init (NCCL attaches to current device).
         torch.cuda.set_device(device_index)
-        dist.init_process_group(backend="nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(
+            backend="nccl",
+            store=dist.TCPStore(
+                os.environ["MASTER_ADDR"],
+                int(os.environ["MASTER_PORT"]),
+                world_size,
+                is_master=False,
+                timeout=PG_COLLECTIVE_TIMEOUT_S,
+            ),
+            rank=rank,
+            world_size=world_size,
+            timeout=PG_COLLECTIVE_TIMEOUT_S,
+        )
         torch.manual_seed(42 + rank)
 
         config = _build_config(ctx)
@@ -208,7 +212,10 @@ def _run_train(tmp_path: Path) -> None:
 
     ctx: dict = {"ckpt_dir": str(tmp_path / "ckpts")}
     _prepare_fixtures(tmp_path, ctx)
-    _set_master_env(_free_port())
+    # Parent-owned store keeps the port bound for the whole spawn (see
+    # tests/support/distributed.py).
+    store = dist.TCPStore("127.0.0.1", 0, 2, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S)
+    _set_master_env(store.port)
 
     manager = mp.Manager()
     results = manager.dict()
@@ -228,6 +235,7 @@ def _run_train(tmp_path: Path) -> None:
             raise TimeoutError(f"TP serve-train spawn exceeded {SERVE_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     for rank in range(2):
         assert rank in results, f"rank {rank} produced no result"
         assert results[rank]["success"], f"rank {rank} failed: {results[rank].get('error')}"
