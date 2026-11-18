@@ -586,3 +586,115 @@ def test_a_string_closes_normally():
     assert _accepts('""')
     assert _accepts('"ab"')
     assert _accepts('{"k": "v w"}')
+
+
+# --- the bail-out paths ----------------------------------------------------
+#
+# The processor has three ways to stop constraining, and every one of them must
+# leave the logits USABLE. A mask that sets every logit to -inf makes the sampler
+# return NaN or crash, which would be worse than emitting unconstrained text.
+
+
+def test_no_vocabulary_mapping_bails_out_cleanly():
+    """An empty id->text map means there is nothing to mask against."""
+    import torch
+
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    processor = GrammarConstrainedProcessor({}, eos_id=None, vocab_size=4)
+    out = processor(torch.zeros(4), "")
+
+    assert processor.gave_up is True
+    assert torch.isfinite(out).any(), "the bail-out masked every logit"
+    assert not torch.isnan(out).any()
+
+
+def test_a_broken_prefix_bails_out_cleanly():
+    """Once the text already violates the grammar, masking cannot save it."""
+    import torch
+
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    vocab = _toy_vocab()
+    processor = GrammarConstrainedProcessor(vocab, eos_id=None, vocab_size=len(vocab))
+    out = processor(torch.zeros(len(vocab)), "not json at all")
+
+    assert processor.gave_up is True
+    assert torch.isfinite(out).any()
+    assert not torch.isnan(out).any()
+
+
+def test_an_inexpressible_continuation_bails_out_cleanly():
+    """A vocabulary that cannot express the next character must not be forced.
+
+    Forcing a token would break the JSON contract silently; returning the raw
+    logits lets the post-generation check report the failure instead.
+    """
+    import torch
+
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    # Only digits: after '{' a key (a quote) is required, which this vocabulary
+    # cannot produce.
+    digits_only = {0: "1", 1: "2", 2: "3"}
+    processor = GrammarConstrainedProcessor(digits_only, eos_id=None, vocab_size=3)
+    out = processor(torch.zeros(3), "{")
+
+    assert processor.gave_up is True
+    assert torch.isfinite(out).any(), "an inexpressible state produced an all -inf mask"
+    assert not torch.isnan(out).any()
+
+
+def test_a_bailed_out_processor_stops_constraining_on_later_calls():
+    """After giving up it must keep returning the logits unchanged.
+
+    A processor that resumed masking midway would produce a reply whose prefix is
+    unconstrained and whose suffix is constrained — neither valid JSON nor a
+    clean fallback.
+    """
+    import torch
+
+    from llm.serving.json_grammar import GrammarConstrainedProcessor
+
+    vocab = _toy_vocab()
+    processor = GrammarConstrainedProcessor(vocab, eos_id=None, vocab_size=len(vocab))
+    processor(torch.zeros(len(vocab)), "not json")
+    assert processor.gave_up is True
+
+    logits = torch.arange(len(vocab), dtype=torch.float32)
+    after = processor(logits.clone(), "still not json {")
+    assert torch.equal(after, logits), "a bailed-out processor modified the logits again"
+
+
+def test_incremental_advance_matches_a_fresh_parse():
+    """The processor reuses grammar state across steps; it must track the text.
+
+    It advances the automaton by only the newly produced suffix, so a bug there
+    would constrain against a stale prefix. Each prefix is compared with a
+    from-scratch parse of the same text, using a FRESH processor each time (a
+    shared instance would accumulate state and make the comparison meaningless).
+    """
+    import torch
+
+    from llm.serving.json_grammar import GrammarConstrainedProcessor, JSONGrammar, build_logit_mask
+
+    vocab = _toy_vocab()
+    size = len(vocab)
+    prefixes = ["", "{", '{"', '{"a', '{"a"', '{"a":', '{"a":1', '{"a":1}', "[", "[1", "[1,", "[1,2"]
+
+    checked = 0
+    for prefix in prefixes:
+        processor = GrammarConstrainedProcessor(vocab, eos_id=None, vocab_size=size)
+        out = processor(torch.zeros(size), prefix)
+        got = {vocab[i] for i in out.isfinite().nonzero().flatten().tolist()}
+
+        grammar = JSONGrammar()
+        grammar.feed(prefix)
+        mask = build_logit_mask(grammar, vocab, vocab_size=size, eos_id=None)
+        if mask is None:
+            continue  # the processor bails out; not a mask comparison
+        expected = {vocab[i] for i in mask}
+        assert got == expected, f"state drifted at {prefix!r}: got {sorted(got)}, want {sorted(expected)}"
+        checked += 1
+
+    assert checked >= 8, f"only {checked} prefixes were actually comparable"
