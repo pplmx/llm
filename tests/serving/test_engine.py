@@ -2121,3 +2121,102 @@ def test_allocating_the_same_request_twice_returns_the_same_slot():
 
     assert first == again
     assert allocator.num_free == 1, "the duplicate allocate must not take a second slot"
+
+
+# --- concurrent streams must not truncate each other ----------------------
+#
+# ``stream_request`` holds a reference to its ``Sequence`` captured BEFORE
+# ``step()`` for a reason documented in the code: a concurrent generator's
+# ``step()`` -> ``Scheduler.schedule()`` can evict a just-finished sequence from
+# ``running`` between our ``step()`` releasing ``_step_lock`` and a
+# ``get_sequence`` re-fetch re-acquiring the scheduler lock, which silently
+# dropped the final step's tokens. The existing streaming tests cover the
+# double-yield and abandoned-generator paths, but nothing ran two streams at
+# once, so a regression to the re-fetch would go unnoticed.
+
+
+def test_concurrent_streams_each_emit_their_full_token_budget(tiny_model, device, mock_tokenizer):
+    """Every concurrently-streamed request must produce ``max_new_tokens`` tokens.
+
+    A truncation shows up as a SHORTER joined string — the dropped token is the
+    last one, so no error is raised and the text still looks plausible.
+    """
+    import threading
+
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=3,
+        device=str(device),
+    )
+
+    budget = 4
+    requests = []
+    for index in range(3):
+        request = GenerationRequest(prompt="abc", max_new_tokens=budget)
+        request.request_id = f"concurrent-{index}"
+        requests.append(request)
+        engine.add_request(request)
+
+    collected: dict[str, list[str]] = {}
+    errors: list[BaseException] = []
+
+    def drain(request: GenerationRequest) -> None:
+        try:
+            # Keep the chunks separate: ``stream_request`` yields one decoded
+            # piece per step, and this tokenizer's decode output does not carry a
+            # separator, so a joined string cannot be counted reliably.
+            collected[request.request_id] = list(engine.stream_request(request))
+        except BaseException as exc:  # noqa: BLE001 - surfaced via ``errors``
+            errors.append(exc)
+
+    threads = [threading.Thread(target=drain, args=(request,)) for request in requests]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    assert not errors, f"a concurrent stream raised: {errors!r}"
+    assert len(collected) == len(requests), f"only {len(collected)} of {len(requests)} streams finished"
+
+    for request_id, chunks in sorted(collected.items()):
+        emitted = len([chunk for chunk in chunks if chunk])
+        assert emitted == budget, (
+            f"{request_id} emitted {emitted} token chunks, expected {budget} ({chunks!r}); "
+            "a concurrent step() evicted the sequence before the final tokens were drained"
+        )
+
+
+def test_a_concurrent_stream_does_not_leak_slots(tiny_model, device, mock_tokenizer):
+    """After concurrent streams finish, every KV slot must be free again."""
+    import threading
+
+    tiny_model.eval()
+    engine = ContinuousBatchingEngine(
+        model=tiny_model,
+        tokenizer=mock_tokenizer,
+        max_batch_size=2,
+        device=str(device),
+    )
+
+    requests = []
+    for index in range(2):
+        request = GenerationRequest(prompt="abc", max_new_tokens=3)
+        request.request_id = f"slot-{index}"
+        requests.append(request)
+        engine.add_request(request)
+
+    def drain(request: GenerationRequest) -> None:
+        list(engine.stream_request(request))
+
+    threads = [threading.Thread(target=drain, args=(request,)) for request in requests]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=60)
+
+    assert engine.slot_allocator.num_free == engine.slot_allocator.total_slots, (
+        f"{engine.slot_allocator.total_slots - engine.slot_allocator.num_free} slot(s) leaked "
+        "after concurrent streams completed"
+    )
