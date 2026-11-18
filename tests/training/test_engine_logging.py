@@ -129,3 +129,102 @@ def test_log_interval_controls_which_batches_are_logged(monkeypatch, tmp_path):
 
     # 2 batches at interval 2 -> exactly the second one (index 1) is logged.
     assert logged == [1], f"interval=2 over 2 batches must log batch index 1 only, got {logged}"
+
+
+# --- the logged LR must be the one the epoch TRAINED at --------------------
+#
+# The summary reads the scheduler AFTER advancing it, so it reported the NEXT
+# epoch's LR. With warmup the gap is severe: measured over 4 epochs with
+# lr=0.1 and warmup_epochs=1, epoch 0 trained at 1e-07 while the summary
+# printed 3.3e-02, and the final epoch printed 0.0. TensorBoard's scalar had the
+# same off-by-one because callbacks fire after the scheduler step too.
+
+
+def _lr_config(tmp_path, *, epochs: int, warmup_epochs: int) -> Config:
+    return Config(
+        training=TrainingConfig(
+            task="regression",
+            epochs=epochs,
+            batch_size=2,
+            num_samples=8,
+            lr=0.1,
+            warmup_epochs=warmup_epochs,
+            output_dir=str(tmp_path / "output"),
+        ),
+        model=ModelConfig(hidden_size=16, num_layers=1),
+        optimization=OptimizationConfig(amp_dtype="auto", use_compile=False),
+    )
+
+
+def test_the_logged_lr_matches_the_lr_training_used(tmp_path):
+    """Every epoch's summary must print the LR that epoch actually used."""
+    config = _lr_config(tmp_path, epochs=4, warmup_epochs=1)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    used: list[float] = []
+    real_run_epoch = engine._run_epoch
+
+    def spy(epoch: int) -> float:
+        used.append(engine.optimizer.param_groups[0]["lr"])
+        return real_run_epoch(epoch)
+
+    engine._run_epoch = spy  # type: ignore[method-assign]
+
+    import io
+    import logging
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    engine.logger.addHandler(handler)
+    try:
+        engine.run()
+    finally:
+        engine.logger.removeHandler(handler)
+
+    printed = [line.split("LR: ")[1].split(" |")[0] for line in stream.getvalue().splitlines() if "LR: " in line]
+    assert len(printed) == len(used) == 4, f"expected 4 epoch summaries, got {len(printed)}"
+    assert printed == [f"{value:.6f}" for value in used], (
+        f"the summary printed {printed} but training used {[f'{value:.6f}' for value in used]}"
+    )
+
+
+def test_the_epoch_summary_does_not_print_the_next_epochs_lr(tmp_path):
+    """The distinguishing case: with warmup, epoch 1 must not look like epoch 2.
+
+    Before the fix the first two epochs printed 0.033 and 0.067 while training
+    used 1e-07 and 0.1 — the summary was one scheduler step ahead.
+    """
+    config = _lr_config(tmp_path, epochs=4, warmup_epochs=1)
+    data_module = SyntheticDataModule(config)
+    data_module.setup()
+    engine = TrainingEngine(config, RegressionTask(config, data_module), rank=0, world_size=1, data_module=data_module)
+
+    used: list[float] = []
+    real_run_epoch = engine._run_epoch
+
+    def spy(epoch: int) -> float:
+        used.append(engine.optimizer.param_groups[0]["lr"])
+        return real_run_epoch(epoch)
+
+    engine._run_epoch = spy  # type: ignore[method-assign]
+
+    import io
+    import logging
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    engine.logger.addHandler(handler)
+    try:
+        engine.run()
+    finally:
+        engine.logger.removeHandler(handler)
+
+    printed = [float(line.split("LR: ")[1].split(" |")[0]) for line in stream.getvalue().splitlines() if "LR: " in line]
+    # Warmup epoch trains at ~0, then the post-warmup rates: 0.1, 0.075, 0.025.
+    assert printed[0] < 1e-5, (
+        f"epoch 1 printed LR {printed[0]}, but the warmup epoch trained at ~0; "
+        "the summary is reading the scheduler one step ahead"
+    )
+    assert abs(printed[1] - 0.1) < 1e-6, f"epoch 2 should train at the peak 0.1, printed {printed[1]}"

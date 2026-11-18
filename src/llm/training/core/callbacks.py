@@ -347,7 +347,14 @@ class TensorBoardLogger(Callback):
             # raising (the engine validates the standard-loop
             # contract at setup, so a missing optimizer is only legal for
             # custom loops).
-            if self.engine.scheduler:
+            # Prefer the LR the epoch actually trained at, which the engine puts
+            # in ``logs`` before the scheduler advance. Falling back to
+            # ``scheduler.get_last_lr()`` reports the NEXT epoch's LR: callbacks
+            # fire after ``scheduler.step()``, so with warmup the first epoch's
+            # scalar was 3.3e-02 while training used 1.0e-07.
+            if "lr" in logs:
+                self.writer.add_scalar("Epoch/LearningRate", logs["lr"], epoch)
+            elif self.engine.scheduler:
                 lr = self.engine.scheduler.get_last_lr()[0]
                 self.writer.add_scalar("Epoch/LearningRate", lr, epoch)
             elif self.engine.optimizer is not None:

@@ -1199,6 +1199,14 @@ class TrainingEngine:
                 if self.config.training.run_validation:
                     val_loss = self._run_validation_epoch(epoch)
 
+                # Capture the LR the epoch ACTUALLY trained at, BEFORE advancing
+                # the scheduler. Reading it afterwards reports the NEXT epoch's
+                # LR: ``get_last_lr()`` returns whatever the last ``step()``
+                # produced. Measured with warmup_epochs=3 over 10 epochs —
+                # epoch 0 trained at 1.0e-07 while the summary printed 3.3e-02
+                # (five orders of magnitude out), and the final epoch printed
+                # 0.0 because the scheduler had already reached the end.
+                epoch_lr = self.optimizer.param_groups[0]["lr"]
                 if self.scheduler:
                     # ReduceLROnPlateau needs the metric, others don't
                     if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -1212,7 +1220,7 @@ class TrainingEngine:
 
                 if self.rank == 0:
                     epoch_time = time.time() - epoch_start_time
-                    lr = self.scheduler.get_last_lr()[0] if self.scheduler else self.optimizer.param_groups[0]["lr"]
+                    lr = epoch_lr
                     peak_mem = self.performance_monitor.get_peak_gpu_memory()
                     self.logger.info("-" * 80)
                     log_msg = (
@@ -1263,7 +1271,12 @@ class TrainingEngine:
                 if self.rank == 0:
                     self._run_callbacks("on_save_checkpoint", epoch=epoch)
 
-                logs = {"avg_loss": avg_loss}
+                # ``epoch_lr`` is the LR this epoch TRAINED at — captured before
+                # the scheduler advance above. Callbacks run after that advance,
+                # so reading ``scheduler.get_last_lr()`` there would write the
+                # NEXT epoch's LR to TensorBoard (the same off-by-one the epoch
+                # summary had).
+                logs = {"avg_loss": avg_loss, "lr": epoch_lr}
                 if val_loss is not None:
                     logs["val_loss"] = val_loss
                 self._run_callbacks("on_epoch_end", epoch=epoch, logs=logs)
