@@ -49,6 +49,7 @@ What becomes easier or more difficult to do because of this change?
 - [ADR-013: Multimodal Encoder & Data-Module Contract](013-multimodal-encoder-contract.md)
 - [ADR-014: ZeRO Stage-2 Activation/Gradient Sharding](014-zero-stage-2-activation-sharding.md)
 - [ADR-015: ZeRO Stage-3 Parameter Sharding](015-zero-stage-3-parameter-sharding.md)
+- [ADR-016: TensorRT & Core ML Feasibility](016-tensorrt-coreml-feasibility.md)
 
 ## Creating a New ADR
 

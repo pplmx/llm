@@ -389,3 +389,67 @@ def test_onnx_dynamic_sequence_is_bounded_by_the_context_window(tmp_path):
     # exactly what the doc note tells deployers to guard against.
     with pytest.raises(ValueError, match="exceeds maximum sequence length"), torch.no_grad():
         model(over)
+
+
+def test_onnx_graph_uses_only_backend_portable_operators(small_model, tmp_path):
+    """The exported graph must stay within operators downs­tream runtimes implement.
+
+    ADR-016 (`docs/adr/016-tensorrt-coreml-feasibility.md`) evaluates TensorRT as a
+    possible backend. That evaluation's key unknown was operator coverage: if the
+    TorchScript exporter emitted something exotic, "port the ONNX graph to
+    TensorRT" would mean writing plugins, and the estimate changes completely.
+
+    Measured: the graph uses 23 op types, all of them native to TensorRT 10/11 —
+    no plugin needed. This test pins that set, so a future change to the model or
+    the exporter cannot silently introduce an operator that moves the port from
+    "config work" to "write CUDA". It also pins the opset, since TensorRT support
+    is versioned by it.
+    """
+    import onnx
+
+    path = tmp_path / "portable.onnx"
+    export_to_onnx(small_model, path, input_shape=(1, 8))
+
+    proto = onnx.load(str(path))
+    ops = {node.op_type for node in proto.graph.node}
+    opsets = {entry.version for entry in proto.opset_import}
+
+    # Operators TensorRT implements natively for decoder-style graphs.
+    trt_native = {
+        "Add",
+        "Cast",
+        "Concat",
+        "Constant",
+        "Div",
+        "Equal",
+        "Erf",
+        "Expand",
+        "Gather",
+        "Identity",
+        "LayerNormalization",
+        "MatMul",
+        "Mul",
+        "Reshape",
+        "Shape",
+        "Slice",
+        "Softmax",
+        "Split",
+        "Sqrt",
+        "Transpose",
+        "Trilu",
+        "Unsqueeze",
+        "Where",
+    }
+    exotic = sorted(ops - trt_native)
+    assert not exotic, (
+        f"the exported graph uses operators outside the TensorRT-native set: {exotic}. "
+        "That changes ADR-016's estimate from 'backend configuration' to 'write a "
+        "TensorRT plugin'. If the addition is intended, update the ADR and this list "
+        "together."
+    )
+
+    # Anti-vacuity: an empty/failed traversal would make the check above pass.
+    assert len(ops) >= 15, f"expected the full decoder op set, saw only {sorted(ops)}"
+    assert opsets == {17}, (
+        f"opset changed to {opsets}; TensorRT support is versioned by opset, so ADR-016's assessment needs revisiting"
+    )
