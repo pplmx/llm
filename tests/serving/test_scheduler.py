@@ -539,3 +539,52 @@ class TestSlotReuseAfterCompletion:
         assert {seq.request_id for seq in scheduled} == {"long", "short"}, (
             f"a waiting request was held back despite free capacity: {[s.request_id for s in scheduled]}"
         )
+
+
+class TestScheduleReturnsACopy:
+    """``schedule()`` must not hand out the scheduler's internal list.
+
+    It returned ``self.running`` directly, so a caller that mutated the result
+    (``clear()``, ``sort()``, ``pop()``) mutated the scheduler's own state.
+    Measured: ``schedule().clear()`` emptied ``scheduler.running``, silently
+    dropping every in-flight sequence — a bug that would surface as requests
+    vanishing mid-batch with no error anywhere.
+    """
+
+    def test_mutating_the_returned_list_does_not_touch_the_scheduler(self):
+        scheduler = Scheduler(max_batch_size=4, max_waiting=16)
+        scheduler.add_sequence(make_sequence("a"))
+        scheduler.add_sequence(make_sequence("b"))
+
+        scheduled = scheduler.schedule()
+        assert len(scheduled) == 2
+
+        scheduled.clear()
+        assert len(scheduler.running) == 2, (
+            "clearing the returned list emptied the scheduler's running queue; "
+            "schedule() is handing out its internal state"
+        )
+
+    def test_appending_to_the_result_does_not_add_a_sequence(self):
+        """A caller appending to the result must not inject work into the batch."""
+        scheduler = Scheduler(max_batch_size=4, max_waiting=16)
+        scheduler.add_sequence(make_sequence("a"))
+
+        scheduled = scheduler.schedule()
+        scheduled.append(make_sequence("intruder"))
+
+        assert [seq.request_id for seq in scheduler.running] == ["a"], (
+            "appending to the returned list added a sequence to the scheduler"
+        )
+
+    def test_the_returned_list_still_reflects_the_promoted_sequences(self):
+        """The copy must contain the actual promoted objects, not placeholders."""
+        scheduler = Scheduler(max_batch_size=4, max_waiting=16)
+        sequence = make_sequence("a")
+        scheduler.add_sequence(sequence)
+
+        scheduled = scheduler.schedule()
+
+        assert len(scheduled) == 1
+        assert scheduled[0] is sequence, "the returned sequence is not the scheduler's object"
+        assert scheduled[0].status == RequestState.RUNNING

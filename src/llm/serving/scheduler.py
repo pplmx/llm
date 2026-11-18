@@ -149,7 +149,13 @@ class Scheduler:
                 seq.status = RequestState.RUNNING
                 self.running.append(seq)
 
-            return self.running
+            # A COPY, not ``self.running``: returning the internal list let a
+            # caller mutate the scheduler's state by accident. Measured:
+            # ``schedule().clear()`` emptied ``scheduler.running``, silently
+            # dropping every in-flight sequence. The list is small (one entry
+            # per active request) so the copy costs nothing next to the forward
+            # pass this feeds.
+            return list(self.running)
 
     def get_sequence(self, request_id: str) -> Sequence | None:
         """Find a sequence by its request_id."""
