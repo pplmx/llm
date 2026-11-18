@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import time
 from datetime import timedelta
 from pathlib import Path
@@ -45,6 +44,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from tests.support.devices import all_gpu_devices
+from tests.support.distributed import make_store, rendezvous_store
 
 pytestmark = pytest.mark.heavy
 
@@ -65,13 +65,6 @@ TPS = 0.01
 # A usable card must have real headroom: the box hosts other workloads, and a
 # 2-rank run that OOMs reports as an infrastructure flake rather than a defect.
 MIN_FREE_BYTES = 8 * 1024**3
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
 
 
 def _build_config(checkpoint_dir: Path, *, resume_from: str | None, backend: str) -> Any:
@@ -103,6 +96,7 @@ def _build_config(checkpoint_dir: Path, *, resume_from: str | None, backend: str
 def _worker(
     rank: int,
     world_size: int,
+    host: str,
     port: int,
     checkpoint_dir: str,
     resume: bool,
@@ -122,11 +116,13 @@ def _worker(
             # ``mp.spawn`` hands every child the same args, so the per-rank
             # card is selected here rather than by the parent.
             torch.cuda.set_device(device_indices[rank])
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = str(port)
         os.environ.setdefault("NCCL_DEBUG", "WARN")
         os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
-        dist.init_process_group(backend, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        # Join the parent's store: it owns the port from allocation onward, so
+        # there is no free window another process could take. See
+        # tests/support/distributed.py for the measured failure this avoids.
+        store = make_store(host, port, world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group(backend, store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         from llm.training.core.engine import TrainingEngine
         from llm.training.distributed.zero import ZeroOptimizer
@@ -176,25 +172,29 @@ def _run(checkpoint_dir: Path, *, resume: bool, backend: str = "gloo") -> dict:
             pytest.skip(f"need {WORLD_SIZE} GPUs with >= {MIN_FREE_BYTES >> 30} GiB free, got {len(gpus)}")
         device_indices = [device.index for device in gpus[:WORLD_SIZE]]
 
-    port = _free_port()
     manager = mp.Manager()
     results: dict = manager.dict()
-    context = mp.spawn(
-        _worker,
-        args=(WORLD_SIZE, port, str(checkpoint_dir), resume, backend, device_indices, results),
-        nprocs=WORLD_SIZE,
-        join=False,
-    )
-    end_at = time.monotonic() + JOIN_TIMEOUT_S
-    while True:
-        remaining = end_at - time.monotonic()
-        if remaining <= 0:
-            for process in context.processes:
-                if process.is_alive():
-                    process.kill()
-            raise TimeoutError(f"ZeRO spawn ({backend}) exceeded {JOIN_TIMEOUT_S}s")
-        if context.join(timeout=remaining):
-            break
+    # The store must outlive the children: it owns the port they connect to, so
+    # closing it before they rendezvous makes every worker block until its own
+    # socket timeout. (Closing it right after ``mp.spawn(join=False)`` returns
+    # does exactly that -- spawn returns as soon as the processes are forked.)
+    with rendezvous_store(WORLD_SIZE, timeout=PG_COLLECTIVE_TIMEOUT_S) as (host, port):
+        context = mp.spawn(
+            _worker,
+            args=(WORLD_SIZE, host, port, str(checkpoint_dir), resume, backend, device_indices, results),
+            nprocs=WORLD_SIZE,
+            join=False,
+        )
+        end_at = time.monotonic() + JOIN_TIMEOUT_S
+        while True:
+            remaining = end_at - time.monotonic()
+            if remaining <= 0:
+                for process in context.processes:
+                    if process.is_alive():
+                        process.kill()
+                raise TimeoutError(f"ZeRO spawn ({backend}) exceeded {JOIN_TIMEOUT_S}s")
+            if context.join(timeout=remaining):
+                break
     out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
     for rank, payload in out.items():
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
@@ -311,10 +311,9 @@ def test_zero_resume_rejects_a_checkpoint_missing_a_rank_shard():
 def _stage2_gpu_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
     try:
         torch.cuda.set_device(ctx["devices"][rank])
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = str(ctx["port"])
         os.environ.setdefault("NCCL_DEBUG", "WARN")
-        dist.init_process_group("nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = make_store(ctx["host"], ctx["port"], world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group("nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         from llm.training.distributed.zero import ZeroStage2Optimizer
 
@@ -375,25 +374,27 @@ def _run_stage2_gpu() -> tuple[dict, list[torch.Tensor]]:
         pytest.skip(f"need {WORLD_SIZE} GPUs with >= {MIN_FREE_BYTES >> 30} GiB free, got {len(gpus)}")
     devices = [device.index for device in gpus[:WORLD_SIZE]]
 
-    port = _free_port()
     manager = mp.Manager()
     results: dict = manager.dict()
-    context = mp.spawn(
-        _stage2_gpu_worker,
-        args=(WORLD_SIZE, {"devices": devices, "port": port}, results),
-        nprocs=WORLD_SIZE,
-        join=False,
-    )
-    end_at = time.monotonic() + JOIN_TIMEOUT_S
-    while True:
-        remaining = end_at - time.monotonic()
-        if remaining <= 0:
-            for process in context.processes:
-                if process.is_alive():
-                    process.kill()
-            raise TimeoutError(f"Stage-2 NCCL spawn exceeded {JOIN_TIMEOUT_S}s")
-        if context.join(timeout=remaining):
-            break
+    # See the note on the ZeRO resume helper: the store owns the port the
+    # children connect to, so it has to outlive them.
+    with rendezvous_store(WORLD_SIZE, timeout=PG_COLLECTIVE_TIMEOUT_S) as (host, port):
+        context = mp.spawn(
+            _stage2_gpu_worker,
+            args=(WORLD_SIZE, {"devices": devices, "host": host, "port": port}, results),
+            nprocs=WORLD_SIZE,
+            join=False,
+        )
+        end_at = time.monotonic() + JOIN_TIMEOUT_S
+        while True:
+            remaining = end_at - time.monotonic()
+            if remaining <= 0:
+                for process in context.processes:
+                    if process.is_alive():
+                        process.kill()
+                raise TimeoutError(f"Stage-2 NCCL spawn exceeded {JOIN_TIMEOUT_S}s")
+            if context.join(timeout=remaining):
+                break
     out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
     manager.shutdown()
     for rank, payload in out.items():
@@ -441,25 +442,25 @@ def test_zero_stage2_drops_non_owned_gradients_on_gpu():
     if len(gpus) < WORLD_SIZE:
         pytest.skip(f"need {WORLD_SIZE} GPUs, got {len(gpus)}")
     devices = [device.index for device in gpus[:WORLD_SIZE]]
-    port = _free_port()
     manager = mp.Manager()
     results: dict = manager.dict()
-    context = mp.spawn(
-        _stage2_grad_worker,
-        args=(WORLD_SIZE, {"devices": devices, "port": port}, results),
-        nprocs=WORLD_SIZE,
-        join=False,
-    )
-    end_at = time.monotonic() + JOIN_TIMEOUT_S
-    while True:
-        remaining = end_at - time.monotonic()
-        if remaining <= 0:
-            for process in context.processes:
-                if process.is_alive():
-                    process.kill()
-            raise TimeoutError(f"Stage-2 NCCL grad-shard spawn exceeded {JOIN_TIMEOUT_S}s")
-        if context.join(timeout=remaining):
-            break
+    with rendezvous_store(WORLD_SIZE, timeout=PG_COLLECTIVE_TIMEOUT_S) as (host, port):
+        context = mp.spawn(
+            _stage2_grad_worker,
+            args=(WORLD_SIZE, {"devices": devices, "host": host, "port": port}, results),
+            nprocs=WORLD_SIZE,
+            join=False,
+        )
+        end_at = time.monotonic() + JOIN_TIMEOUT_S
+        while True:
+            remaining = end_at - time.monotonic()
+            if remaining <= 0:
+                for process in context.processes:
+                    if process.is_alive():
+                        process.kill()
+                raise TimeoutError(f"Stage-2 NCCL grad-shard spawn exceeded {JOIN_TIMEOUT_S}s")
+            if context.join(timeout=remaining):
+                break
     out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
     manager.shutdown()
 
@@ -476,9 +477,8 @@ def test_zero_stage2_drops_non_owned_gradients_on_gpu():
 def _stage2_grad_worker(rank: int, world_size: int, ctx: dict, results: dict) -> None:
     try:
         torch.cuda.set_device(ctx["devices"][rank])
-        os.environ["MASTER_ADDR"] = "127.0.0.1"
-        os.environ["MASTER_PORT"] = str(ctx["port"])
-        dist.init_process_group("nccl", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        store = make_store(ctx["host"], ctx["port"], world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        dist.init_process_group("nccl", store=store, rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
 
         from llm.training.distributed.zero import ZeroStage2Optimizer
 
