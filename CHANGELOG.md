@@ -338,6 +338,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Audited per-layer quantization policy resolution; correct and already well covered** (quantization): `resolve_layer_policies` is the single point deciding which precision each layer gets, so a wrong resolution means part of a model silently quantizes at the wrong width. Verified every rejection path fires with an actionable message — a target absent from `available_names`, overlap across two policies, duplicates WITHIN one policy, and a policy field the base config lacks — plus the merge semantics: an override touches only the field it sets, other fields inherit from the base config, and untargeted layers are absent from the result (the callers' `effective_configs.get(name, config)` fallback covers them). Confirmed the three consumers (AWQ, FP8, and the public re-export) use that fallback, and that a per-layer `group_size` override reaches the quantizer while `bits` still inherits. 24 existing tests already pin the four rejection paths, so this round added none. **No product defect and no code change.**
 
+
+- **Spot-checked that the recently audited tests actually FAIL when the code is wrong** (testing): the previous rounds confirmed several modules behave correctly, but "the test passes" only means something if it would fail on a regression. Four mutations were applied and every one was caught — disabling `LayerQuantPolicy`'s intra-policy duplicate detection, disabling `resolve_layer_policies`' cross-policy overlap detection, forcing `num_kv_heads` to `None` (silently dropping GQA), and forcing `use_glu` to `True` (rebuilding a dense MLP with random gate weights). Each produced a test failure naming the right property, not a generic crash. Also surveyed the 176 `is not None` assertions for the "assert the result exists and nothing else" pattern: the ones sampled all sit alongside substantive checks (`len(seq.generated_ids) == 1`, `not prefix_cache._entries`, `num_blocks == 32`), i.e. they are preconditions, not the whole test. **No product defect and no code change.** Recorded because "I verified module X" is a weaker claim than "the tests for X would catch it if I were wrong", and the difference is exactly the fake-passing-test risk this session keeps running into.
+
+### Added
+
 ### Added
 
 ### Added
