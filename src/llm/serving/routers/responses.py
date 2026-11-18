@@ -177,7 +177,7 @@ async def create_response(
     temperature = 1.0 if request.temperature is None else request.temperature
 
     if request.stream:
-        _validate_stream_request(prompt, max_output_tokens)
+        _validate_stream_request(prompt, max_output_tokens, budget_field="max_output_tokens")
         return StreamingResponse(
             _responses_stream_generator(
                 request=request,
@@ -188,7 +188,7 @@ async def create_response(
             media_type="text/event-stream",
         )
 
-    _validate_generation_bounds(prompt, max_output_tokens)
+    _validate_generation_bounds(prompt, max_output_tokens, budget_field="max_output_tokens")
     _validate_queue_has_capacity()
 
     timer = metrics.request_timer(endpoint="responses")

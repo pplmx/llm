@@ -151,7 +151,7 @@ async def create_completion(
                 ErrorCode.INVALID_REQUEST,
                 "streaming a list of prompts is not supported; send one prompt per streaming request",
             )
-        _validate_stream_request(prompts[0], request.max_tokens)
+        _validate_stream_request(prompts[0], request.max_tokens, budget_field="max_tokens")
         return StreamingResponse(
             _completion_stream_generator(request, prompts[0]),
             media_type="text/event-stream",
@@ -161,7 +161,7 @@ async def create_completion(
     # the same payload the same way (see ``/generate``).
     for prompt in prompts:
         _validate_prompt_encodable(prompt)
-        _validate_generation_bounds(prompt, request.max_tokens)
+        _validate_generation_bounds(prompt, request.max_tokens, budget_field="max_tokens")
     _validate_queue_has_capacity()
 
     timer = metrics.request_timer(endpoint="completions")

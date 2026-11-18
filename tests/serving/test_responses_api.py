@@ -262,3 +262,74 @@ def test_streaming_emits_the_event_sequence_the_sdk_accumulates(client):
     # The final event carries the full response object.
     final = events[-1]["response"]
     assert final["output"][0]["content"][0]["text"] is not None
+
+
+# --- error messages must name the field the CLIENT sent ---------------------
+#
+# ``_validate_generation_bounds`` is shared by /generate, /v1/completions,
+# /v1/chat/completions and /v1/responses, and it used to hard-code
+# "max_new_tokens" — an INTERNAL name. A Responses client that sent
+# ``max_output_tokens`` was told about a parameter it had never written, which
+# is the same defect class as the dropped ``max_completion_tokens``: the error
+# points at the wrong field and the user cannot act on it.
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "expected_field"),
+    [
+        (
+            "/v1/responses",
+            {"model": "tiny", "input": "abc", "max_output_tokens": 200},
+            "max_output_tokens",
+        ),
+        (
+            "/v1/chat/completions",
+            {"model": "tiny", "messages": [{"role": "user", "content": "abc"}], "max_tokens": 200},
+            "max_tokens",
+        ),
+        (
+            "/v1/completions",
+            {"model": "tiny", "prompt": "abc", "max_tokens": 200},
+            "max_tokens",
+        ),
+        (
+            "/generate",
+            {"prompt": "abc", "max_new_tokens": 200},
+            "max_new_tokens",
+        ),
+    ],
+)
+def test_an_over_budget_error_names_the_clients_own_field(client, path, payload, expected_field):
+    """Each endpoint's 400 must use that endpoint's parameter name.
+
+    ``/generate`` legitimately calls it ``max_new_tokens``; the OpenAI-shaped
+    endpoints do not, and telling those clients about an internal name sends them
+    looking for a field that does not exist in their request.
+    """
+    response = client.post(path, json=payload)
+    assert response.status_code == 400, response.text
+    message = response.json()["error"]["message"]
+
+    assert expected_field in message, (
+        f"{path} reported {message!r}; it should name {expected_field!r}, the field the client sent"
+    )
+    # The internal name must not leak into an endpoint whose client cannot send it.
+    if expected_field != "max_new_tokens":
+        assert "max_new_tokens" not in message, (
+            f"{path} leaked the internal field name into a client-facing message: {message!r}"
+        )
+
+
+def test_the_shared_validator_defaults_to_generate_endpoints_field_name():
+    """The default keeps ``/generate`` working without every caller passing it.
+
+    ``/generate`` is the endpoint whose request really does call the budget
+    ``max_new_tokens``, so its behaviour must be the unchanged default rather
+    than something that has to be opted into.
+    """
+    import inspect
+
+    from llm.serving.routers.generate import _validate_generation_bounds
+
+    parameters = inspect.signature(_validate_generation_bounds).parameters
+    assert parameters["budget_field"].default == "max_new_tokens"

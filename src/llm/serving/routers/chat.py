@@ -104,7 +104,10 @@ async def chat_completions(
         # context-overflowing ``max_tokens`` is a real 4xx, not an
         # "Error: ..." chunk inside a 200 stream — the sibling ``/generate``
         # stream pre-validates the same way.
-        _validate_stream_request(prompt, request.max_tokens)
+        # Name the field the CLIENT sent. ``max_completion_tokens`` is folded
+        # into ``max_tokens`` by the schema, so this is the only spelling a
+        # user can still be looking at, and it is the one the docs show.
+        _validate_stream_request(prompt, request.max_tokens, budget_field="max_tokens")
         return StreamingResponse(
             _chat_stream_generator(
                 request,
@@ -123,7 +126,7 @@ async def chat_completions(
     # RETRYABLE ``queue_full`` — and without the bounds check an over-window
     # prompt reached the backend, which is exactly the divergence
     # ``/generate`` already fixed on its own non-streaming path.
-    _validate_generation_bounds(prompt, request.max_tokens)
+    _validate_generation_bounds(prompt, request.max_tokens, budget_field="max_tokens")
     _validate_queue_has_capacity()
 
     timer = metrics.request_timer(endpoint="chat_completions")

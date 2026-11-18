@@ -265,7 +265,7 @@ def _validate_prompt_encodable(prompt: str) -> None:
         ) from exc
 
 
-def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
+def _validate_generation_bounds(prompt: str, max_new_tokens: int, *, budget_field: str = "max_new_tokens") -> None:
     """Raise a 400 ``APIError`` when prompt + ``max_new_tokens`` cannot fit.
 
     Mirrors the ``ServingGenerationService._generation_config`` guard
@@ -289,7 +289,7 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
     if isinstance(model_max_seq, int) and max_new_tokens >= model_max_seq:
         raise APIError(
             ErrorCode.INVALID_REQUEST,
-            f"max_new_tokens ({max_new_tokens}) must be less than the model's "
+            f"{budget_field} ({max_new_tokens}) must be less than the model's "
             f"max_seq_len ({model_max_seq}); the prompt would have no room "
             "to fit in the context window.",
         )
@@ -326,9 +326,9 @@ def _validate_generation_bounds(prompt: str, max_new_tokens: int) -> None:
     if prompt_len + max_new_tokens > budget:
         raise APIError(
             ErrorCode.INVALID_REQUEST,
-            f"prompt ({prompt_len} tokens) + max_new_tokens ({max_new_tokens}) "
+            f"prompt ({prompt_len} tokens) + {budget_field} ({max_new_tokens}) "
             f"would exceed the context window ({budget}); shorten the prompt "
-            "or lower max_new_tokens.",
+            f"or lower {budget_field}.",
         )
 
 
@@ -355,14 +355,14 @@ def _validate_queue_has_capacity() -> None:
         )
 
 
-def _validate_stream_request(prompt: str, max_new_tokens: int) -> None:
+def _validate_stream_request(prompt: str, max_new_tokens: int, *, budget_field: str = "max_new_tokens") -> None:
     """Run all client-caused pre-stream validations (encodability + bounds).
 
     Shared by ``/generate`` and ``/v1/chat/completions`` streaming routes so
     an invalid request is a real 400 before any SSE bytes are sent, never an ``Error: ...`` chunk inside a 200 stream.
     """
     _validate_prompt_encodable(prompt)
-    _validate_generation_bounds(prompt, max_new_tokens)
+    _validate_generation_bounds(prompt, max_new_tokens, budget_field=budget_field)
     _validate_queue_has_capacity()
 
 
