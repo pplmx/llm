@@ -323,6 +323,27 @@ class _CacheIOExporter(nn.Module):
         return logits, present_k, present_v
 
 
+def _reject_rope_models_for_generation_export(model: nn.Module) -> None:
+    """Raise a clear error if any attention module uses RoPE.
+
+    See :func:`export_decoder_for_generation` for why the two-graph scheme
+    cannot handle RoPE yet. The check walks the transformer blocks rather than
+    trusting a single flag, because the attribute lives on each attention
+    module.
+    """
+    blocks = getattr(model, "transformer_blocks", None) or ()
+    for layer_index, block in enumerate(blocks):
+        attention = getattr(block, "attention", None) or getattr(block, "self_attn", None)
+        if attention is not None and getattr(attention, "use_rope", False):
+            raise ValueError(
+                "export_decoder_for_generation does not support RoPE models yet: "
+                f"layer {layer_index} uses rotary position embedding, and the traced decode "
+                "graph freezes `has_past` from a Python comparison, which corrupts the "
+                "attention reshape. Export a non-RoPE model, or use export_to_onnx (single "
+                "graph) for the forward pass."
+            )
+
+
 def export_decoder_for_generation(
     model: nn.Module,
     output_dir: str | Path,
@@ -366,6 +387,19 @@ def export_decoder_for_generation(
     """
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
+
+    # RoPE models cannot be exported by this two-graph scheme yet. The decode
+    # graph's `has_past` is derived from `kv_cache.seq_len > seq_len`, a PYTHON
+    # comparison that the tracer freezes into a constant; with RoPE the
+    # positions are then built from that stale constant and the attention
+    # reshape fails with `shape '[1, 1, 32]' is invalid for input of size 512`
+    # — an error from inside `core/attn/mha.py` that names neither the export
+    # nor the cause. Measured: every `use_rope=True` configuration fails
+    # (1-2 layers, 2-4 heads), while every `use_rope=False` one succeeds.
+    # Refuse up front with the actual limitation instead of surfacing that
+    # downstream traceback; real DeepSeek-style/decoupled-RoPE export is a
+    # separate slice.
+    _reject_rope_models_for_generation_export(model)
 
     if max_seq_len is None:
         max_seq_len = _model_context_window(model)

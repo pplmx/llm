@@ -230,3 +230,54 @@ def test_verify_onnx_cannot_check_the_pair(tmp_path):
     paths = export_decoder_for_generation(model, tmp_path, prompt_len=PROMPT)
     with pytest.raises((ValueError, KeyError)):
         verify_onnx(paths["prefill"], model, input_shape=(1, PROMPT))
+
+
+# --- RoPE models must be refused with the real reason ----------------------
+#
+# The two-graph scheme cannot export a RoPE model yet: the decode graph derives
+# `has_past` from `kv_cache.seq_len > seq_len`, a PYTHON comparison the tracer
+# freezes into a constant, and with RoPE the positions are then built from that
+# stale constant. The failure surfaced from INSIDE `core/attn/mha.py` as
+# `RuntimeError: shape '[1, 1, 32]' is invalid for input of size 512` — naming
+# neither the export nor the cause. Measured: every `use_rope=True` config fails
+# (1-2 layers x 2-4 heads), every `use_rope=False` one succeeds.
+
+
+def _rope_model() -> DecoderModel:
+    torch.manual_seed(0)
+    return DecoderModel(
+        vocab_size=VOCAB,
+        hidden_size=HIDDEN,
+        num_layers=LAYERS,
+        num_heads=HEADS,
+        max_seq_len=MAX_SEQ,
+        use_rope=True,
+    ).eval()
+
+
+def test_a_rope_model_is_refused_with_an_actionable_message(tmp_path):
+    """The error must name RoPE and point at the alternative, not leak a reshape."""
+    with pytest.raises(ValueError, match=r"rotary|RoPE") as excinfo:
+        export_decoder_for_generation(_rope_model(), tmp_path, prompt_len=PROMPT)
+
+    message = str(excinfo.value)
+    assert "RoPE" in message or "rotary" in message, "the error should name rotary embeddings"
+    assert "does not support" in message
+    # The alternative has to be discoverable from the message.
+    assert "export_to_onnx" in message, "the error should point at the single-graph exporter"
+
+
+def test_the_refusal_is_not_a_reshape_failure_from_deep_inside_attention(tmp_path):
+    """Regression guard on the failure MODE: it used to be an opaque RuntimeError."""
+    with pytest.raises(ValueError, match=r"rotary|RoPE"):
+        export_decoder_for_generation(_rope_model(), tmp_path, prompt_len=PROMPT)
+
+
+def test_a_non_rope_model_still_exports_both_graphs(tmp_path):
+    """Control: the refusal must not block the configuration that works."""
+    paths = export_decoder_for_generation(_model(), tmp_path, prompt_len=PROMPT)
+
+    assert sorted(paths) == ["decode", "prefill"]
+    for path in paths.values():
+        assert path.exists()
+        assert path.stat().st_size > 0
