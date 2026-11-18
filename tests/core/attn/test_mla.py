@@ -690,3 +690,75 @@ def test_mla_paged_kv_write_filters_right_padded_tokens():
     assert cache.block_manager.get_num_tokens(1) == int(lengths[1]), (
         f"decode row stored {cache.block_manager.get_num_tokens(1)} tokens, expected {lengths[1]}"
     )
+
+
+# --- the placeholder's defining property -----------------------------------
+#
+# `MultiLatentAttention` is documented as the PLACEHOLDER MLA: the latent
+# queries attend to the full projected K/V, and the result is a uniform mean
+# over the `num_latents` outputs broadcast to every sequence position. That
+# broadcast is what makes it a placeholder rather than real latent-compressed
+# attention, and it is what a reader checks to decide whether this module fits
+# their use — yet none of the 26 tests above pin it.
+#
+# Measured while writing this: the property holds exactly (max |delta| between
+# positions ~1e-7, i.e. float noise). It is invisible with the default
+# `include_norm_residual=True`, because the per-position residual is added back
+# on top — which is why the module's OUTPUT differs by position while the
+# attention output does not.
+
+
+def test_the_attention_output_is_a_uniform_broadcast_over_positions():
+    """Without the residual, every position gets the SAME attention output."""
+    model = MultiLatentAttention(
+        hidden_size=32,
+        num_heads=4,
+        num_latents=8,
+        dropout_p=0.0,
+        is_causal=False,
+        include_norm_residual=False,  # isolate the attention output
+        device=DEFAULT_DEVICE,
+    )
+    model.eval()
+    torch.manual_seed(0)
+    x = torch.randn(1, 6, 32, device=DEFAULT_DEVICE)
+
+    with torch.no_grad():
+        out = model(x)
+
+    # Every position equals position 0, up to float noise.
+    for position in range(1, out.shape[1]):
+        assert torch.allclose(out[0, 0], out[0, position], atol=1e-5), (
+            f"position {position} differs from position 0 by "
+            f"{float((out[0, 0] - out[0, position]).abs().max()):.3e}; "
+            "the placeholder's uniform broadcast no longer holds"
+        )
+
+
+def test_the_residual_explains_the_per_position_difference():
+    """With the residual on, the module output DOES vary by position.
+
+    Pinned so the two behaviours are not confused: the attention contribution is
+    identical everywhere, and the variation comes entirely from adding the
+    per-position input back.
+    """
+    torch.manual_seed(0)
+    x = torch.randn(1, 6, 32, device=DEFAULT_DEVICE)
+
+    model = MultiLatentAttention(
+        hidden_size=32,
+        num_heads=4,
+        num_latents=8,
+        dropout_p=0.0,
+        is_causal=False,
+        include_norm_residual=True,
+        device=DEFAULT_DEVICE,
+    )
+    model.eval()
+    with torch.no_grad():
+        out = model(x)
+
+    assert not torch.allclose(out[0, 0], out[0, 5], atol=1e-3), (
+        "with include_norm_residual=True the per-position input is added back, so the "
+        "module output must differ by position; if it does not, the residual was dropped"
+    )
