@@ -467,3 +467,64 @@ class TestModelsEndpoint:
         response = client.get("/v1/models")
         assert response.status_code == 200
         assert response.json()["data"][0]["id"]
+
+
+# --- finish_reason is a closed set, and the schema enforces it -------------
+#
+# The behaviour tests above pin WHEN each value is emitted. Nothing pinned that
+# the set is closed: the field is ``Literal["stop", "length"]``, and a value
+# outside it — one this server can never produce, because it has no content
+# filter and no tool calling — must be rejected at validation rather than
+# serialized into a response clients would misread.
+#
+# Emitting an unsupported reason is worse than omitting one: an OpenAI SDK client
+# branches on it (``content_filter`` means "the output was censored, do not
+# retry"; ``tool_calls`` means "read the tool payload").
+
+
+def test_finish_reason_schema_accepts_only_the_values_this_server_produces():
+    """``stop`` / ``length`` / ``None`` are valid; every other OpenAI value is not."""
+    from pydantic import ValidationError
+
+    from llm.serving.schemas import ChatCompletionChoice
+
+    message = {"role": "assistant", "content": "hi"}
+    for allowed in ("stop", "length", None):
+        choice = ChatCompletionChoice(index=0, message=message, finish_reason=allowed)
+        assert choice.finish_reason == allowed
+
+    # Values the OpenAI schema defines but this server cannot produce.
+    for unsupported in ("content_filter", "tool_calls", "function_call", "stop_sequence", ""):
+        with pytest.raises(ValidationError):
+            ChatCompletionChoice(index=0, message=message, finish_reason=unsupported)
+
+
+def test_every_reason_the_routers_emit_round_trips_through_the_schema():
+    """The values the code assigns must all be members of the Literal.
+
+    A router writing a string the schema does not accept turns a successful
+    generation into a 500 at response-construction time, so the two lists have to
+    agree.
+    """
+    import pathlib
+    import re
+
+    from llm.serving.schemas import ChatCompletionChoice
+
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    emitted: set[str] = set()
+    for name in ("chat.py", "completions.py", "generate.py"):
+        source = (repo_root / "src" / "llm" / "serving" / "routers" / name).read_text(encoding="utf-8")
+        # The routers use ``"length" if <cond> else "stop"``; collect both arms.
+        for first, second in re.findall(r'"(\w+)"\s+if[^\n]*?else\s+"(\w+)"', source):
+            emitted |= {first, second}
+        # Plus any direct assignment form.
+        emitted |= set(re.findall(r'finish_reason\s*=\s*"(\w+)"', source))
+
+    # Only keep the reasons (the ternary scan may also pick up unrelated pairs).
+    reasons = {value for value in emitted if value in {"stop", "length"}}
+    assert reasons, "no finish_reason value found; the scan pattern is stale"
+
+    message = {"role": "assistant", "content": "hi"}
+    for reason in sorted(reasons):
+        ChatCompletionChoice(index=0, message=message, finish_reason=reason)  # must not raise

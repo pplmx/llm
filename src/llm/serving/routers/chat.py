@@ -396,8 +396,10 @@ async def _chat_stream_generator(
             # handler's ``"length"``-on-truncation heuristic: a completion
             # that hit the ``max_tokens`` budget is ``"length"`` per the
             # OpenAI spec, not ``"stop"``. ``token_count`` is the number of
-            # streamed tokens — the same count the non-streaming path
-            # approximates with ``len(completion)``.
+            # streamed tokens, which is the true count; the non-streaming path
+            # re-encodes the text through ``_token_count`` to reach the same
+            # number (it used a bare ``len(completion)`` char proxy before that
+            # was fixed — see that helper's docstring for the measurement).
             finish_reason = "length" if token_count >= request.max_tokens else "stop"
             final_chunk = ChatCompletionChunk(
                 id=completion_id,
