@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import warnings
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
 
-from llm.export._wrapper import ExportCacheWrapper, clamp_input_shape, dummy_token_ids
+from llm.export._wrapper import ExportCacheWrapper, clamp_input_shape, dummy_token_ids, model_vocab_size
 
 #: Default ``(batch, seq_len)`` dummy shape for trace-based exports. The
 #: sequence axis is clamped to the model's own context window at call time.
@@ -458,3 +459,102 @@ def _cache_geometry(model: nn.Module) -> tuple[int, int]:
             f"embedding_dim={hidden_size}, num_heads={num_heads})"
         )
     return int(num_kv_heads), int(hidden_size) // int(num_heads)
+
+
+def verify_decoder_generation_graphs(
+    graph_dir: str | Path,
+    model: nn.Module,
+    *,
+    prompt_len: int = 8,
+    new_tokens: int = 3,
+    rtol: float = 1e-4,
+    atol: float = 1e-5,
+) -> bool:
+    """Check an exported prefill+decode pair by decoding with it end to end.
+
+    :func:`verify_onnx` cannot check these graphs: it feeds ``input_ids`` only,
+    while the cache-aware pair takes ``ids`` / ``past_k`` / ``past_v`` and is
+    meaningless without them (measured: ``ValueError: Required inputs (['ids',
+    'past_k', 'past_v']) are missing from input feed (['input_ids'])``). Without
+    this function a caller could export the pair but not verify it, which is the
+    shape of gap that let the GGUF offsets ship broken.
+
+    The check is the real workload: run the prefill graph once with an EMPTY
+    cache, feed each decode step's ``present_*`` back as the next ``past_*``, and
+    compare every step against the model decoding with its own in-place cache.
+    Comparing only prefill would miss the decode graph entirely — and prefill is
+    the phase that already worked before the pair existed.
+
+    Args:
+        graph_dir: Directory written by :func:`export_decoder_for_generation`.
+        model: The model the graphs were exported from (eval mode not required).
+        prompt_len: Prompt length to feed the prefill graph.
+        new_tokens: Decode steps to run after the prefill.
+        rtol: Relative tolerance for the per-step comparison.
+        atol: Absolute tolerance for the per-step comparison.
+
+    Returns:
+        True when every step matches within tolerance.
+
+    Raises:
+        ImportError: If ``onnxruntime`` is not installed.
+        FileNotFoundError: If either graph is missing from ``graph_dir``.
+    """
+    try:
+        import numpy as np
+        import onnxruntime as ort
+    except ImportError as e:  # pragma: no cover - onnxruntime is a test dep
+        raise ImportError("onnxruntime is required: pip install onnxruntime") from e
+
+    directory = Path(graph_dir)
+    prefill_path = directory / "prefill.onnx"
+    decode_path = directory / "decode.onnx"
+    for path in (prefill_path, decode_path):
+        if not path.exists():
+            raise FileNotFoundError(f"expected {path} — export the pair with export_decoder_for_generation first")
+
+    prefill = ort.InferenceSession(str(prefill_path), providers=["CPUExecutionProvider"])
+    decode = ort.InferenceSession(str(decode_path), providers=["CPUExecutionProvider"])
+
+    num_kv_heads, head_dim = _cache_geometry(model)
+    layers = len(getattr(model, "transformer_blocks", []))
+    max_seq_len = _model_context_window(model) or (prompt_len + new_tokens)
+
+    # Reference: the model decoding with its own in-place cache.
+    from llm.core.kv_cache import KVCache
+
+    torch.manual_seed(0)
+    vocab = model_vocab_size(model) or 100
+    prompt = torch.randint(0, vocab, (1, prompt_len))
+    steps = [torch.randint(0, vocab, (1, 1)) for _ in range(new_tokens)]
+
+    caches = [KVCache(1, max_seq_len, num_kv_heads, head_dim) for _ in range(layers)]
+    expected: list[Any] = []
+    with torch.no_grad():
+        out = model(prompt, use_cache=True, kv_caches=caches)
+        out = out[0] if isinstance(out, tuple) else out
+        expected.append(out[:, -1:].float().numpy())
+        for token in steps:
+            out = model(token, use_cache=True, kv_caches=caches)
+            out = out[0] if isinstance(out, tuple) else out
+            expected.append(out.float().numpy())
+
+    # ``InferenceSession.run`` is typed as a union (sparse / dict / list outputs
+    # are all possible). These graphs return three dense float arrays, so the
+    # results are narrowed once here instead of casting at every use site.
+    def _run_dense(session: Any, ids: Any, past_k: Any, past_v: Any) -> tuple[Any, Any, Any]:
+        logits, present_k, present_v = session.run(None, {"ids": ids, "past_k": past_k, "past_v": past_v})
+        return np.asarray(logits), np.asarray(present_k), np.asarray(present_v)
+
+    past_k = np.zeros((layers, 1, num_kv_heads, 0, head_dim), dtype=np.float32)
+    past_v = np.zeros_like(past_k)
+    logits, past_k, past_v = _run_dense(prefill, prompt.numpy(), past_k, past_v)
+    got: list[Any] = [logits[:, -1:]]
+    for token in steps:
+        logits, past_k, past_v = _run_dense(decode, token.numpy(), past_k, past_v)
+        got.append(logits)
+
+    if past_k.shape[3] != prompt_len + new_tokens:
+        return False
+
+    return all(np.allclose(want, actual, rtol=rtol, atol=atol) for want, actual in zip(expected, got, strict=True))

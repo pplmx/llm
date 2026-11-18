@@ -161,3 +161,72 @@ def test_a_single_graph_cannot_serve_both_phases(tmp_path):
         "start_pos/has_past constants apparently no longer matter, so the separate decode graph may "
         "be unnecessary — re-measure before simplifying."
     )
+
+
+@pytest.mark.quick
+def test_the_pair_can_be_verified_after_export(tmp_path):
+    """A caller must be able to check what it exported.
+
+    ``verify_onnx`` cannot do it — it feeds ``input_ids`` only, while the pair
+    takes ``ids``/``past_k``/``past_v``, so an export was previously unverifiable
+    from outside this test module. That is the gap shape that let the GGUF offsets
+    ship broken: a writer whose output nobody could independently check.
+    """
+    from llm.export.onnx import verify_decoder_generation_graphs
+
+    model = _model()
+    export_decoder_for_generation(model, tmp_path, prompt_len=PROMPT)
+    assert verify_decoder_generation_graphs(tmp_path, model, prompt_len=PROMPT, new_tokens=3) is True
+
+
+@pytest.mark.quick
+def test_the_verifier_rejects_graphs_from_a_different_model(tmp_path):
+    """The verifier must be able to say NO, or returning True proves nothing.
+
+    Exports a pair from a DIFFERENT model (same architecture, different weights)
+    and checks it against the first one: the decode must diverge.
+    """
+    from llm.export.onnx import verify_decoder_generation_graphs
+
+    model = _model()
+    torch.manual_seed(999)
+    other = DecoderModel(
+        vocab_size=VOCAB, hidden_size=HIDDEN, num_layers=LAYERS, num_heads=HEADS, max_seq_len=MAX_SEQ
+    ).eval()
+    assert not torch.equal(model.transformer_blocks[0].mlp.fc1.weight, other.transformer_blocks[0].mlp.fc1.weight), (
+        "the two models must actually differ for this test to mean anything"
+    )
+
+    export_decoder_for_generation(other, tmp_path, prompt_len=PROMPT)
+    assert verify_decoder_generation_graphs(tmp_path, model, prompt_len=PROMPT, new_tokens=3) is False, (
+        "the verifier accepted a pair exported from a different model; it cannot be trusted to detect a wrong export"
+    )
+
+
+@pytest.mark.quick
+def test_the_verifier_names_the_missing_graph(tmp_path):
+    """A half-exported directory must fail with the path, not a cryptic ORT error."""
+    from llm.export.onnx import verify_decoder_generation_graphs
+
+    model = _model()
+    export_decoder_for_generation(model, tmp_path, prompt_len=PROMPT)
+    (tmp_path / "decode.onnx").unlink()
+
+    with pytest.raises(FileNotFoundError, match=r"decode\.onnx"):
+        verify_decoder_generation_graphs(tmp_path, model, prompt_len=PROMPT)
+
+
+@pytest.mark.quick
+def test_verify_onnx_cannot_check_the_pair(tmp_path):
+    """Pin WHY the dedicated verifier exists.
+
+    ``verify_onnx`` is the single-graph checker and feeds ``input_ids``; using it
+    on the pair raises rather than silently verifying the wrong thing. If this
+    ever starts passing, the dedicated verifier may be redundant.
+    """
+    from llm.export.onnx import verify_onnx
+
+    model = _model()
+    paths = export_decoder_for_generation(model, tmp_path, prompt_len=PROMPT)
+    with pytest.raises((ValueError, KeyError)):
+        verify_onnx(paths["prefill"], model, input_shape=(1, PROMPT))
