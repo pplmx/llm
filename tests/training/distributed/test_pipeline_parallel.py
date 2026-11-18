@@ -18,7 +18,6 @@ tests verify continuously in CI without GPUs.
 from __future__ import annotations
 
 import os
-import socket
 import time
 from datetime import timedelta
 
@@ -69,6 +68,27 @@ PP_JOIN_TIMEOUT_S = 300
 # start) while staying under the parent join, so the guard still speaks first.
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=240)
 
+
+def _env_store(world_size: int):
+    """Non-master store over the port the PARENT's store owns.
+
+    The parent creates a ``TCPStore`` on port 0, so the OS picks an ephemeral
+    port that the store keeps bound for the whole spawn; it then publishes that
+    port via ``MASTER_PORT``. Building the store here (instead of letting
+    ``init_method`` bind its own) is what removes the race: no process ever sees
+    the port unbound, so two tests cannot be handed the same one.
+
+    See ``tests/support/distributed.py`` for the measured failure this replaces.
+    """
+    return dist.TCPStore(
+        os.environ["MASTER_ADDR"],
+        int(os.environ["MASTER_PORT"]),
+        world_size,
+        is_master=False,
+        timeout=PG_COLLECTIVE_TIMEOUT_S,
+    )
+
+
 SEED = 123
 VOCAB = 64
 HIDDEN = 32
@@ -79,18 +99,19 @@ BATCH = 2
 ACCUM = 3
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
+def _setup_env(world_size: int):
+    """Publish a port the PARENT's store owns, and hand the store back.
 
-
-def _setup_env() -> int:
-    port = _free_port()
+    The caller must keep the returned store alive until every child has joined:
+    it is what holds the port. Returning it (rather than just the number) makes
+    the lifetime explicit instead of relying on it staying referenced somewhere.
+    """
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    return port
+    os.environ["MASTER_PORT"] = str(store.port)
+    return store
 
 
 def _build_model(seed: int = SEED) -> DecoderModel:
@@ -148,7 +169,7 @@ def _run_spawn_worker(worker, world_size: int) -> dict:
     join timeout. Hiding CUDA once here keeps every caller honest about what it
     is testing and makes them independent of the host's GPU load.
     """
-    _setup_env()
+    store = _setup_env(world_size)  # owns the port; must outlive the children
     saved_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     try:
@@ -170,6 +191,7 @@ def _run_spawn_worker(worker, world_size: int) -> dict:
             raise TimeoutError(f"PP spawn exceeded {PP_JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     out = dict(results)
     if any(v.get("error") for v in out.values()):
         first = next(v["error"] for v in out.values() if v.get("error"))
@@ -181,7 +203,7 @@ def _pp_parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -251,7 +273,7 @@ def _pp_scale_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -291,7 +313,7 @@ def _pp_eval_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -325,7 +347,7 @@ def _pp_roundtrip_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -366,7 +388,7 @@ def _pp_gnorm_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -562,7 +584,7 @@ def _pp_2d_parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -664,7 +686,7 @@ def _pp_2d_dyn_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -735,7 +757,7 @@ def _pp_gc_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -798,7 +820,7 @@ def _pp_mb_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -869,7 +891,7 @@ def _pp_amp_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -922,7 +944,7 @@ def _pp_tp_parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -985,7 +1007,7 @@ def _pp_tp_wrap_train_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -1048,7 +1070,7 @@ def _pp3d_engine_train_worker(rank: int, world_size: int, results: dict) -> None
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -1094,7 +1116,7 @@ def _pp3d_dp2_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -1183,7 +1205,7 @@ def _pp3d_engine_dp2_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -1245,7 +1267,7 @@ def _pp3d_checkpoint_worker(rank: int, world_size: int, ctx: dict, results: dict
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -1330,8 +1352,7 @@ def test_pp3d_checkpoint_roundtrip_four_process_cpu(tmp_path) -> None:
     """3d (pp=2 x tp=2) engine save + resume: global full dict + per-stage
     optimizer moments, not stage-0-only weights."""
     ckpt_dir = str(tmp_path / "pp3d_checkpoints")
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(_free_port())
+    store = _setup_env(4)  # owns the port; must outlive the children
     manager = mp.Manager()
     results: dict = manager.dict()
     saved_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
@@ -1360,6 +1381,7 @@ def test_pp3d_checkpoint_roundtrip_four_process_cpu(tmp_path) -> None:
             raise TimeoutError(f"pp3d checkpoint e2e exceeded {PP_JOIN_TIMEOUT_S}s")
         if ctx.join(timeout=remaining):
             break
+    del store
     out = {r: dict(results[r]) for r in range(4)}
     for rank, payload in out.items():
         assert payload["success"], f"rank {rank} failed: {payload.get('error')}"

@@ -22,7 +22,6 @@ They run on gloo/CPU with `mp.spawn`, matching the rest of
 from __future__ import annotations
 
 import os
-import socket
 import time
 import warnings
 from datetime import timedelta
@@ -37,18 +36,17 @@ pytestmark = pytest.mark.heavy
 SPAWN_TIMEOUT_S = 120
 
 
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
-
-
 def _run(worker, world_size: int = 2) -> dict:
     """Spawn ``worker`` over gloo and return its ``results`` dict."""
     manager = mp.Manager()
     results = manager.dict()
+    # The store owns the port from allocation to close, so no other test can be
+    # handed the same one (see tests/support/distributed.py).
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=timedelta(seconds=SPAWN_TIMEOUT_S)
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(_free_port())
+    os.environ["MASTER_PORT"] = str(store.port)
     context = mp.spawn(worker, args=(world_size, results), nprocs=world_size, join=False)
     deadline = time.monotonic() + SPAWN_TIMEOUT_S
     while True:
@@ -60,6 +58,7 @@ def _run(worker, world_size: int = 2) -> dict:
             raise TimeoutError(f"spawn exceeded {SPAWN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     out = dict(results)
     manager.shutdown()
     for rank, payload in out.items():
@@ -69,8 +68,19 @@ def _run(worker, world_size: int = 2) -> dict:
 
 
 def _init(rank: int, world_size: int) -> None:
+    # Join the parent's store (published via MASTER_PORT): the parent keeps it
+    # open for the whole spawn, so the port is never free for another test to
+    # take. A bare env-var rendezvous would look for a different server.
+    store = dist.TCPStore(
+        os.environ["MASTER_ADDR"],
+        int(os.environ["MASTER_PORT"]),
+        world_size,
+        is_master=False,
+        timeout=timedelta(seconds=SPAWN_TIMEOUT_S // 2),
+    )
     dist.init_process_group(
         "gloo",
+        store=store,
         rank=rank,
         world_size=world_size,
         timeout=timedelta(seconds=SPAWN_TIMEOUT_S // 2),

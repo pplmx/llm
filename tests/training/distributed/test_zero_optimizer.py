@@ -15,7 +15,6 @@ both ranks run the same data, and true under DDP after the gradient average.
 from __future__ import annotations
 
 import os
-import socket
 import time
 from datetime import timedelta
 
@@ -33,6 +32,27 @@ from llm.training.tasks.base_task import TrainingTask
 # torch.multiprocessing.spawn multi-rank training: heavy (see
 # test_pipeline_parallel.py); excluded from the per-push CPU gate.
 pytestmark = pytest.mark.heavy
+
+
+def _env_store(world_size: int):
+    """Non-master store over the port the PARENT's store owns.
+
+    The parent creates a ``TCPStore`` on port 0, so the OS picks an ephemeral
+    port that the store keeps bound for the whole spawn; it then publishes that
+    port via ``MASTER_PORT``. Building the store here (instead of letting
+    ``init_method`` bind its own) is what removes the race: no process ever sees
+    the port unbound, so two tests cannot be handed the same one.
+
+    See ``tests/support/distributed.py`` for the measured failure this replaces.
+    """
+    return dist.TCPStore(
+        os.environ["MASTER_ADDR"],
+        int(os.environ["MASTER_PORT"]),
+        world_size,
+        is_master=False,
+        timeout=PG_COLLECTIVE_TIMEOUT_S,
+    )
+
 
 SEED = 123
 IN_DIM = 4
@@ -54,18 +74,19 @@ STEPS_PRE = 5
 STEPS_POST = 7
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
-        return int(sock.getsockname()[1])
+def _setup_env(world_size: int):
+    """Publish a port the PARENT's store owns, and hand the store back.
 
-
-def _setup_env() -> int:
-    port = _free_port()
+    The caller must keep the returned store alive until every child has joined:
+    it is what holds the port. Returning it (rather than just the number) makes
+    the lifetime explicit instead of relying on it staying referenced somewhere.
+    """
+    store = dist.TCPStore(
+        "127.0.0.1", 0, world_size, is_master=True, wait_for_workers=False, timeout=PG_COLLECTIVE_TIMEOUT_S
+    )
     os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(port)
-    return port
+    os.environ["MASTER_PORT"] = str(store.port)
+    return store
 
 
 def _build_model(seed: int = SEED) -> nn.Sequential:
@@ -93,7 +114,7 @@ def _reference_params() -> list[torch.Tensor]:
 
 def _run_spawn(worker, world_size: int) -> dict:
     """Spawn ``worker(rank, world_size, results)`` over gloo/CPU procs."""
-    _setup_env()
+    store = _setup_env(world_size)  # owns the port; must outlive the children
     manager = mp.Manager()
     results: dict = manager.dict()
     context = mp.spawn(worker, args=(world_size, results), nprocs=world_size, join=False)
@@ -107,6 +128,7 @@ def _run_spawn(worker, world_size: int) -> dict:
             raise TimeoutError(f"ZeroOptimizer spawn exceeded {JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     out = dict(results)
     if any(v.get("error") for v in out.values()):
         first = next(v["error"] for v in out.values() if v.get("error"))
@@ -118,7 +140,7 @@ def _parity_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -211,7 +233,7 @@ def _checkpoint_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -277,7 +299,7 @@ def _engine_zero_worker(rank: int, world_size: int, results: dict) -> None:
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -391,7 +413,12 @@ def _refusal_worker(rank: int, world_size: int, results: dict) -> None:
     """Record the engine's exception message for the strategy in ``GUARD_STRATEGY``."""
     try:
         strategy = os.environ["GUARD_STRATEGY"]
-        dist.init_process_group("gloo", rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S)
+        # Join the parent's store like every other worker here: the parent publishes
+        # its port via MASTER_PORT and holds the store, so the bare env-var
+        # rendezvous would look for a DIFFERENT server and block until timeout.
+        dist.init_process_group(
+            "gloo", store=_env_store(world_size), rank=rank, world_size=world_size, timeout=PG_COLLECTIVE_TIMEOUT_S
+        )
 
         from llm.data.modules.synthetic import SyntheticDataModule
         from llm.training.core.config import (
@@ -437,7 +464,7 @@ def _run_refusal(world_size: int, strategy: str) -> dict:
     recorded exception message IS the result under test.
     """
     os.environ["GUARD_STRATEGY"] = strategy
-    _setup_env()
+    store = _setup_env(world_size)  # owns the port; must outlive the children
     manager = mp.Manager()
     results: dict = manager.dict()
     context = mp.spawn(_refusal_worker, args=(world_size, results), nprocs=world_size, join=False)
@@ -451,6 +478,7 @@ def _run_refusal(world_size: int, strategy: str) -> dict:
             raise TimeoutError(f"custom-loop refusal probe exceeded {JOIN_TIMEOUT_S}s")
         if context.join(timeout=remaining):
             break
+    del store
     out = dict(results)
     manager.shutdown()
     return out
@@ -502,7 +530,7 @@ def _stage2_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -570,7 +598,7 @@ def _stage2_reduction_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -630,7 +658,7 @@ def _stage2_clip_worker(rank: int, world_size: int, results: dict) -> None:
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -696,7 +724,7 @@ def _engine_zero_stage2_worker(rank: int, world_size: int, results: dict) -> Non
         os.environ["CUDA_VISIBLE_DEVICES"] = ""  # CPU path; gloo only transports CPU tensors
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -771,7 +799,7 @@ def _stage2_grads_are_sharded_worker(rank: int, world_size: int, results: dict) 
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
@@ -837,7 +865,7 @@ def _stage2_checkpoint_worker(rank: int, world_size: int, results: dict) -> None
     try:
         dist.init_process_group(
             "gloo",
-            init_method="tcp://127.0.0.1:" + os.environ["MASTER_PORT"],
+            store=_env_store(world_size),
             rank=rank,
             world_size=world_size,
             timeout=PG_COLLECTIVE_TIMEOUT_S,
