@@ -716,3 +716,87 @@ def test_the_constant_block_fix_does_not_change_normal_data(quantize, dequantize
     assert abs(relative - reference_rel_err) < 1e-3, (
         f"normal-data error moved from {reference_rel_err} to {relative:.4f}"
     )
+
+
+# --- the shape gate: K-quants need last_dim % 256 == 0 ---------------------
+#
+# K-quant blocks are 256 elements, so a tensor whose last dimension is not a
+# multiple of 256 cannot be encoded with them. The exporter falls back to F16 per
+# tensor and warns. Nothing pinned that gate, so it could regress two ways: the
+# fallback could stop happening (producing an unreadable file), or it could fire
+# when it should not (silently shipping an unquantized model under a
+# ``q4_k``-labelled file_type — a 2-4x size regression with no error).
+
+
+@pytest.mark.parametrize(
+    ("last_dim", "expected"),
+    [
+        (256, True),
+        (512, True),
+        (32, False),
+        (128, False),
+        (255, False),
+        (1, False),
+    ],
+)
+def test_the_k_quant_shape_gate_matches_the_block_size(last_dim, expected):
+    """Exactly the shapes whose last dim is a 256 multiple may use a K-quant."""
+    from llm.export.gguf.spec import can_quantize_k_shape
+
+    assert can_quantize_k_shape((4, last_dim)) is expected
+
+
+def test_an_incompatible_tensor_falls_back_instead_of_producing_a_bad_file(tmp_path):
+    """A K-quant request on a non-multiple shape must still yield a READABLE file.
+
+    The failure to avoid is not "no quantization" — that is correct and warned
+    about — but an encoding attempt that writes a file llama.cpp cannot parse.
+    """
+    gguf = pytest.importorskip("gguf", reason="gguf-py is llama.cpp's reference reader")
+    torch = pytest.importorskip("torch")
+
+    from llm.export.gguf.exporter import export_to_gguf
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    # hidden_size=32: last dim 32, NOT a multiple of the 256-element K block.
+    model = DecoderModel(vocab_size=64, hidden_size=32, num_layers=1, num_heads=2, max_seq_len=16).eval()
+    path = export_to_gguf(model, tmp_path / "fallback.gguf", quantize="q4_k")
+
+    reader = gguf.GGUFReader(str(path))
+    assert reader.tensors, "the fallback produced a file the reference reader cannot see into"
+    # No K-quant tensor should have been attempted.
+    k_types = {int(t.tensor_type) for t in reader.tensors}
+    assert not (k_types & {int(GGMLQuantizationType.Q4_K), int(GGMLQuantizationType.Q6_K)}), (
+        "a K-quant was applied to a shape the block size cannot tile"
+    )
+
+
+def test_a_compatible_tensor_really_is_k_quantized(tmp_path):
+    """The gate must not be over-eager: a 256-multiple shape DOES get quantized.
+
+    Without this, a gate that always returned False would keep the fallback test
+    above green while every ``q4_k`` export silently shipped F16.
+    """
+    gguf = pytest.importorskip("gguf", reason="gguf-py is llama.cpp's reference reader")
+    torch = pytest.importorskip("torch")
+
+    from llm.export.gguf.exporter import export_to_gguf
+    from llm.models.decoder import DecoderModel
+
+    torch.manual_seed(0)
+    model = DecoderModel(
+        vocab_size=512,
+        hidden_size=256,
+        num_layers=1,
+        num_heads=4,
+        intermediate_size=512,
+        max_seq_len=32,
+    ).eval()
+    path = export_to_gguf(model, tmp_path / "quantized.gguf", quantize="q4_k")
+
+    reader = gguf.GGUFReader(str(path))
+    types = {int(t.tensor_type) for t in reader.tensors}
+    assert int(GGMLQuantizationType.Q4_K) in types, (
+        f"a 256-multiple model was not K-quantized; tensor types were {sorted(types)}"
+    )
