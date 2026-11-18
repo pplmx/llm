@@ -74,6 +74,21 @@ def load_entry_point_registry[T](
         factory = _load_one(ep.name, group, ep)
         if factory is None:
             continue
+        # An entry point that resolves to something non-callable — a module, a
+        # string, a class attribute — is a packaging mistake, not a plugin.
+        # ``load_entry_point_hooks`` already refuses these; without the same
+        # check here the value was REGISTERED and only blew up at first use,
+        # far from the plugin that caused it. Measured: an entry point whose
+        # ``load()`` returned a string registered successfully and
+        # ``loaded`` reported it as a healthy plugin.
+        if not callable(factory):
+            logger.error(
+                "Entry point '%s' in group '%s' resolved to %s, which is not callable; skipped.",
+                ep.name,
+                group,
+                type(factory).__name__,
+            )
+            continue
         if preexisting:
             # ``overwrite=True`` and the name is already registered:
             # ``Registry.register`` would raise, so use the explicit

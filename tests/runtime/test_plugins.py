@@ -7,20 +7,26 @@ import pytest
 from llm.runtime.plugins import load_entry_point_hooks, load_entry_point_registry
 from llm.runtime.registry import Registry
 
+# The placeholder values below are CALLABLES, not strings. The loader's
+# docstring says it loads callables, every real registry is typed to a
+# factory/builder, and `load_entry_point_registry` now rejects a non-callable
+# entry point the same way `load_entry_point_hooks` always has. Strings used to
+# work here only because the registry is generically typed `Registry[str]`.
+
 
 def test_load_entry_point_registry_skips_existing_names():
     registry: Registry[str] = Registry("test")
-    registry.register("builtin", "factory-a")
+    registry.register("builtin", lambda: "factory-a")
 
     ep = MagicMock()
     ep.name = "builtin"
-    ep.load.return_value = "factory-b"
+    ep.load.return_value = lambda: "factory-b"
 
     with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
         loaded = load_entry_point_registry("llm.test_group", registry)
 
     assert loaded == []
-    assert registry.get("builtin") == "factory-a"
+    assert registry.get("builtin")() == "factory-a"
 
 
 def test_load_entry_point_registry_warns_on_skipped_collision(caplog):
@@ -30,17 +36,17 @@ def test_load_entry_point_registry_warns_on_skipped_collision(caplog):
     loader used to skip with no log line — a packaging conflict that went
     completely unnoticed. The skip must at least emit a warning."""
     registry: Registry[str] = Registry("test")
-    registry.register("onnx", "builtin-onnx")
+    registry.register("onnx", lambda: "builtin-onnx")
 
     ep = MagicMock()
     ep.name = "onnx"
-    ep.load.return_value = "plugin-onnx"
+    ep.load.return_value = lambda: "plugin-onnx"
 
     with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
         loaded = load_entry_point_registry("llm.export_backends", registry)
 
     assert loaded == []
-    assert registry.get("onnx") == "builtin-onnx"
+    assert registry.get("onnx")() == "builtin-onnx"
     warning_records = [r for r in caplog.records if r.levelname == "WARNING"]
     assert any("onnx" in r.getMessage() for r in warning_records), "collision must be logged"
     assert any("already registered" in r.getMessage() for r in warning_records)
@@ -55,17 +61,17 @@ def test_load_entry_point_registry_overwrite_replaces_existing_names():
     ``ValueError: 'X' is already registered`` — so the documented override
     mechanism could never overwrite anything."""
     registry: Registry[str] = Registry("test")
-    registry.register("builtin", "factory-a")
+    registry.register("builtin", lambda: "factory-a")
 
     ep = MagicMock()
     ep.name = "builtin"
-    ep.load.return_value = "factory-b"
+    ep.load.return_value = lambda: "factory-b"
 
     with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
         loaded = load_entry_point_registry("llm.test_group", registry, overwrite=True)
 
     assert loaded == ["builtin"]
-    assert registry.get("builtin") == "factory-b"
+    assert registry.get("builtin")() == "factory-b"
 
 
 def test_load_entry_point_registry_registers_new_plugins():
@@ -73,13 +79,13 @@ def test_load_entry_point_registry_registers_new_plugins():
 
     ep = MagicMock()
     ep.name = "custom"
-    ep.load.return_value = "custom-factory"
+    ep.load.return_value = lambda: "custom-factory"
 
     with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
         loaded = load_entry_point_registry("llm.test_group", registry)
 
     assert loaded == ["custom"]
-    assert registry.get("custom") == "custom-factory"
+    assert registry.get("custom")() == "custom-factory"
 
 
 def test_load_entry_point_hooks_invokes_callables():
@@ -100,7 +106,7 @@ def test_load_entry_point_registry_isolates_broken_plugin():
     """one plugin failing to import must not abort the loop — the
     healthy plugins still register, and the registry is usable."""
     registry: Registry[str] = Registry("test")
-    registry.register("builtin", "factory-builtin")
+    registry.register("builtin", lambda: "factory-builtin")
 
     broken = MagicMock()
     broken.name = "zzz_broken"
@@ -108,7 +114,7 @@ def test_load_entry_point_registry_isolates_broken_plugin():
 
     healthy = MagicMock()
     healthy.name = "healthy"
-    healthy.load.return_value = "factory-healthy"
+    healthy.load.return_value = lambda: "factory-healthy"
 
     eps = [broken, healthy]
     with patch("llm.runtime.plugins._iter_group_entry_points", return_value=eps):
@@ -117,8 +123,8 @@ def test_load_entry_point_registry_isolates_broken_plugin():
     # The healthy plugin registered; the builtin is untouched; the broken one
     # was skipped (not fatal).
     assert loaded == ["healthy"]
-    assert registry.get("healthy") == "factory-healthy"
-    assert registry.get("builtin") == "factory-builtin"
+    assert registry.get("healthy")() == "factory-healthy"
+    assert registry.get("builtin")() == "factory-builtin"
     assert "zzz_broken" not in registry
 
 
@@ -277,3 +283,44 @@ def test_registering_a_third_party_backend_makes_it_config_valid():
     # Once removed it is rejected again, proving the lookup is not cached per name.
     with pytest.raises(ValueError, match="generation_backend"):
         ServingConfig(generation_backend="_test_plugin_backend")
+
+
+def test_load_entry_point_registry_rejects_a_non_callable_plugin(caplog):
+    """A non-callable entry point must be refused, exactly as hooks refuse it.
+
+    `load_entry_point_hooks` has always checked `callable`; the registry path did
+    not, so an entry point resolving to a module or a string was REGISTERED and
+    reported as healthy, then blew up at first use far from the plugin that
+    caused it. Measured: `load()` returning a string produced
+    `loaded == ['bad']` with the string stored in the registry.
+    """
+    registry: Registry[object] = Registry("test")
+
+    ep = MagicMock()
+    ep.name = "bad"
+    ep.load.return_value = "not-callable"
+
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
+        loaded = load_entry_point_registry("llm.test_group", registry)
+
+    assert loaded == [], "a non-callable plugin must not be reported as loaded"
+    assert not registry.has_raw("bad"), "a non-callable plugin must not enter the registry"
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert any("not callable" in r.getMessage() for r in errors), "the skip must be logged"
+
+
+def test_both_loader_paths_agree_on_rejecting_a_non_callable():
+    """The two loaders must not disagree about what a valid plugin looks like."""
+    registry: Registry[object] = Registry("test")
+
+    ep = MagicMock()
+    ep.name = "bad"
+    ep.load.return_value = 42
+
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
+        registry_loaded = load_entry_point_registry("llm.test_group", registry)
+    with patch("llm.runtime.plugins._iter_group_entry_points", return_value=[ep]):
+        hooks_invoked = load_entry_point_hooks("llm.test_group")
+
+    assert registry_loaded == []
+    assert hooks_invoked == []
