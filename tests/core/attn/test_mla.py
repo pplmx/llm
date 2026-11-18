@@ -762,3 +762,76 @@ def test_the_residual_explains_the_per_position_difference():
         "with include_norm_residual=True the per-position input is added back, so the "
         "module output must differ by position; if it does not, the residual was dropped"
     )
+
+
+# --- the module must IGNORE is_causal for the positive effect it documents --
+#
+# ``mla.py`` deliberately does NOT forward ``is_causal`` to SDPA: torch's
+# auto-causal mask keys off the QUERY axis, which here is the fixed latent pool,
+# so latent row ``l`` would attend only to key columns ``0..l`` and every key at
+# position >= ``num_latents`` would become invisible. The module's own comment
+# records the measurement ("perturbing x[..., num_latents:] changed the attention
+# output by 0.0").
+#
+# Nothing pinned that. The existing tests all PASS ``is_causal=False``, so a
+# future change that forwards the flag would keep them green while reintroducing
+# the invisible-tail bug for every caller that builds with ``is_causal=True`` —
+# which is the decoder default.
+
+
+def test_is_causal_true_does_not_hide_keys_beyond_the_latent_count():
+    """With ``is_causal=True``, keys past ``num_latents`` must still be attended.
+
+    Forwarding the flag would make latent row ``l`` see only key columns
+    ``0..l``; with ``num_latents=4`` and an 8-token sequence the entire tail
+    would stop contributing. Perturbing that tail is the direct probe.
+    """
+    torch.manual_seed(0)
+    model = MultiLatentAttention(
+        hidden_size=32,
+        num_heads=4,
+        num_latents=4,
+        dropout_p=0.0,
+        is_causal=True,  # the decoder default, and the case that used to break
+        include_norm_residual=False,
+        device=DEFAULT_DEVICE,
+    ).eval()
+    sequence = torch.randn(1, 8, 32, device=DEFAULT_DEVICE)
+
+    with torch.no_grad():
+        baseline = model(sequence)
+        perturbed_input = sequence.clone()
+        perturbed_input[..., 4:, :] += 1.0  # only the tail, past num_latents
+        perturbed = model(perturbed_input)
+
+    delta = float((baseline - perturbed).abs().max())
+    assert delta > 1e-3, (
+        f"perturbing tokens 4..7 changed the output by only {delta:.3e}; with is_causal forwarded "
+        "to SDPA those keys would be invisible, silently truncating the context at num_latents"
+    )
+
+
+def test_is_causal_does_not_change_the_output_at_all():
+    """The flag is accepted but inert: the same input gives the same output."""
+    torch.manual_seed(0)
+    torch_device = DEFAULT_DEVICE
+    common = {
+        "hidden_size": 32,
+        "num_heads": 4,
+        "num_latents": 4,
+        "dropout_p": 0.0,
+        "include_norm_residual": False,
+        "device": torch_device,
+    }
+    causal = MultiLatentAttention(is_causal=True, **common).eval()
+    non_causal = MultiLatentAttention(is_causal=False, **common).eval()
+    non_causal.load_state_dict(causal.state_dict())
+
+    sequence = torch.randn(1, 8, 32, device=torch_device)
+    with torch.no_grad():
+        a = causal(sequence)
+        b = non_causal(sequence)
+
+    assert torch.allclose(a, b, atol=1e-6), (
+        "is_causal changed the output; it must not be forwarded to SDPA (see the class docstring)"
+    )
