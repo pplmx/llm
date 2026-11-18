@@ -21,6 +21,21 @@ class AccuracyMetric(BaseMetric):
                 f"{len(predictions)} predictions and {len(references)} references; "
                 "a task's predict() must return exactly as many rows as prepare_data()."
             )
+        # A caller passing a tensor gets "Boolean value of Tensor with more than
+        # one value is ambiguous" from the truthiness test below — an error that
+        # names neither the argument nor the fix. ``PerplexityMetric`` already
+        # rejects a wrong type explicitly; match that here. Tensors are the
+        # natural mistake because the sibling metric TAKES one.
+        from torch import Tensor
+
+        for label, value in (("predictions", predictions), ("references", references)):
+            if isinstance(value, Tensor):
+                raise TypeError(
+                    f"accuracy {label} must be a sequence of labels, not a torch.Tensor; "
+                    "convert with `.tolist()` first. (PerplexityMetric takes tensors; this "
+                    "metric compares label values one row at a time.)"
+                )
+
         correct = sum(p == r for p, r in zip(predictions, references, strict=True))
         acc = correct / len(predictions) if predictions else 0.0
         return {"accuracy": acc}
@@ -43,6 +58,16 @@ class F1Metric(BaseMetric):
         Returns ``{"f1": 0.0}`` for empty inputs, matching
         :meth:`AccuracyMetric.compute`'s convention.
         """
+        # Same guard as AccuracyMetric: a tensor reaches the truthiness test and
+        # raises "Boolean value of Tensor with more than one value is ambiguous".
+        from torch import Tensor
+
+        for label, value in (("predictions", predictions), ("references", references)):
+            if isinstance(value, Tensor):
+                raise TypeError(
+                    f"f1 {label} must be a sequence of labels, not a torch.Tensor; convert with `.tolist()` first."
+                )
+
         if not predictions:
             return {"f1": 0.0}
 

@@ -129,3 +129,55 @@ def test_f1_missing_sklearn_raises_actionable_install_hint(monkeypatch):
     monkeypatch.setattr(accuracy_module, "import_module", _fake_import_module)
     with pytest.raises(ImportError, match=r"llm\[eval\]"):
         F1Metric().compute(["a"], ["b"])
+
+
+# --- wrong argument types must say so ---------------------------------------
+#
+# ``BaseMetric.compute`` declares ``predictions: Any``, and the sibling
+# ``PerplexityMetric`` genuinely takes tensors, so a caller reaching for
+# ``accuracy`` with a tensor is making a reasonable mistake. Before the guard,
+# that raised "Boolean value of Tensor with more than one value is ambiguous" —
+# an error naming neither the argument nor the fix.
+
+
+def test_a_tensor_argument_is_rejected_with_an_actionable_message():
+    """A tensor must fail with a TypeError that says what to do instead."""
+    import torch
+
+    from llm.evaluation.metrics.accuracy import AccuracyMetric
+
+    with pytest.raises(TypeError) as excinfo:
+        AccuracyMetric().compute(torch.tensor([[1.0, 2.0], [3.0, 4.0]]), torch.tensor([0, 1]))
+
+    message = str(excinfo.value)
+    assert "torch.Tensor" in message
+    assert "tolist" in message, "the error should name the fix, not just the problem"
+
+
+def test_a_tensor_reference_is_rejected_too():
+    """The guard covers both arguments, not just predictions."""
+    import torch
+
+    from llm.evaluation.metrics.accuracy import AccuracyMetric
+
+    with pytest.raises(TypeError, match="references"):
+        AccuracyMetric().compute([0, 1], torch.tensor([0, 1]))
+
+
+def test_plain_sequences_still_work():
+    """The guard must not reject the documented list input."""
+    from llm.evaluation.metrics.accuracy import AccuracyMetric
+
+    metric = AccuracyMetric()
+    assert metric.compute([0, 1, 2, 1], [0, 1, 0, 1])["accuracy"] == 0.75
+    assert metric.compute([], [])["accuracy"] == 0.0
+
+
+def test_f1_rejects_a_tensor_with_the_same_message():
+    """``F1Metric`` had the identical defect and needs the identical guard."""
+    import torch
+
+    from llm.evaluation.metrics.accuracy import F1Metric
+
+    with pytest.raises(TypeError, match=r"torch\.Tensor"):
+        F1Metric().compute(torch.tensor([0, 1]), torch.tensor([0, 1]))
