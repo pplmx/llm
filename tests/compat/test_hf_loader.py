@@ -1139,3 +1139,58 @@ def test_the_inferred_config_builds_the_matching_norm_layers():
     assert not any(key.endswith("norm1.bias") for key in inferred.state_dict()), (
         "the built model has norm biases an RMSNorm checkpoint cannot supply"
     )
+
+
+# --- rope_theta must be read from BOTH config layouts ---------------------
+#
+# transformers 5.x moved the rotary parameters into ``rope_parameters``
+# (``{"rope_theta": ..., "rope_type": ...}``) and ``Qwen2Config`` no longer has a
+# ``rope_theta`` attribute at all. Reading only the top-level key therefore
+# returned the 10000 default for every newer checkpoint — measured on a
+# Qwen2-style config carrying ``rope_parameters: {rope_theta: 1000000.0}``, the
+# mapping produced 10000.0: a 100x wrong rotary frequency, loaded silently.
+
+
+def test_rope_theta_is_read_from_the_nested_layout():
+    """A transformers-5.x config nests it under ``rope_parameters``."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    hf_config = {"rope_parameters": {"rope_theta": 1_000_000.0, "rope_type": "default"}}
+
+    assert get_config_mapping(hf_config)["rope_theta"] == 1_000_000.0
+
+
+def test_rope_theta_still_reads_the_flat_layout():
+    """Older configs and this project's own ``config.json`` keep it top-level."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    assert get_config_mapping({"rope_theta": 500_000.0})["rope_theta"] == 500_000.0
+
+
+def test_rope_theta_falls_back_to_the_llama_default():
+    """Neither layout present -> HF's 10000 default, not an error."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    assert get_config_mapping({})["rope_theta"] == 10000.0
+    # An explicit top-level value wins over a nested one only when nesting is
+    # absent; here neither is set.
+    assert get_config_mapping({"vocab_size": 100})["rope_theta"] == 10000.0
+
+
+def test_the_nested_layout_wins_over_a_top_level_value():
+    """When both exist the nested (newer) one is authoritative."""
+    from llm.compat.weight_mapping import get_config_mapping
+
+    hf_config = {"rope_theta": 10_000.0, "rope_parameters": {"rope_theta": 1_000_000.0}}
+
+    assert get_config_mapping(hf_config)["rope_theta"] == 1_000_000.0
+
+
+def test_a_real_qwen2_config_keeps_its_theta():
+    """End to end with ``transformers``' own config object."""
+    transformers = pytest.importorskip("transformers", reason="transformers is the reference implementation")
+    from llm.compat.weight_mapping import get_config_mapping
+
+    config = transformers.Qwen2Config(rope_parameters={"rope_theta": 1_000_000.0, "rope_type": "default"})
+
+    assert get_config_mapping(config.to_dict())["rope_theta"] == 1_000_000.0

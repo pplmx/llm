@@ -534,6 +534,26 @@ def convert_hf_to_combined_qkv(
     return out
 
 
+def _rope_theta_from(hf_config: dict[str, Any]) -> float:
+    """Read ``rope_theta`` from either the flat or the nested config layout.
+
+    transformers 5.x moved the rotary parameters into a ``rope_parameters``
+    mapping (``{"rope_theta": ..., "rope_type": ...}``); older configs and this
+    project's own published ``config.json`` keep a top-level ``rope_theta``.
+    Prefer the nested value when present, then the flat one, then HF's 10000
+    default.
+    """
+    parameters = hf_config.get("rope_parameters")
+    if isinstance(parameters, dict):
+        nested = parameters.get("rope_theta")
+        if nested is not None:
+            return float(nested)
+    flat = hf_config.get("rope_theta")
+    if flat is not None:
+        return float(flat)
+    return 10000.0
+
+
 def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
     """
     Map HuggingFace config to our config format.
@@ -562,7 +582,15 @@ def get_config_mapping(hf_config: dict[str, Any]) -> dict[str, Any]:
         # External checkpoints carry no such key and default to None (dense).
         "attn_sparse": hf_config.get("attn_sparse"),
         "rms_norm_eps": hf_config.get("rms_norm_eps", 1e-5),
-        "rope_theta": hf_config.get("rope_theta", 10000.0),
+        # ``rope_theta`` moved under ``rope_parameters`` in transformers 5.x
+        # (Qwen2Config no longer has the attribute at all), so reading only the
+        # top level silently returned the 10000 default for every newer
+        # checkpoint. Measured on a Qwen2-style config carrying
+        # ``rope_parameters: {rope_theta: 1000000.0}``: the mapping produced
+        # 10000.0 — a 100x wrong rotary frequency, loaded without an error.
+        # Both layouts are read, the nested one first, so older configs and
+        # hand-written dicts keep working.
+        "rope_theta": _rope_theta_from(hf_config),
         # HF Llama/GPT-style configs carry the MLP activation as
         # ``hidden_act``; real Llama/Mistral use ``silu`` (SwiGLU).  The
         # loader maps this onto our ``mlp_activation`` so a published model
