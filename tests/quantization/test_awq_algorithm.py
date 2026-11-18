@@ -459,3 +459,64 @@ def test_group_quantize_dequant_matches_the_search_grouping():
         expected[:, start : start + group.shape[1]] = torch.round(group / delta).clamp(-qmax - 1, qmax) * delta
 
     assert torch.equal(out, expected)
+
+
+# --- non-finite weights must be REFUSED ------------------------------------
+#
+# One NaN weight survived the whole AWQ pipeline and surfaced only as NaN in the
+# quantized layer's OUTPUT: measured on a 64x32 layer, 1.6% of the packed
+# ``scales`` came out NaN and the layer returned NaN for 3.1% of its output --
+# a model that loads and runs but computes garbage. ``.clamp(min=1e-8)`` on the
+# scale cannot help, because NaN survives both ``abs().max()`` and ``clamp``.
+
+
+def test_awq_refuses_a_layer_with_a_nan_weight():
+    """The error must name the count and the remedy, not fail later as NaN."""
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    layer = nn.Linear(64, 32, bias=False)
+    layer.weight.data[0, 0] = float("nan")
+
+    with pytest.raises(ValueError, match="non-finite") as excinfo:
+        AWQQuantizer(layer, AWQConfig(bits=4, group_size=32))
+
+    message = str(excinfo.value)
+    assert "non-finite" in message
+    assert "NaN" in message
+    assert "repair" in message.lower(), "the error should say what to do about it"
+
+
+def test_awq_refuses_a_layer_with_an_inf_weight():
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    layer = nn.Linear(64, 32, bias=False)
+    layer.weight.data[3, 5] = float("inf")
+
+    with pytest.raises(ValueError, match="non-finite"):
+        AWQQuantizer(layer, AWQConfig(bits=4, group_size=32))
+
+
+def test_awq_still_accepts_finite_weights():
+    """The guard must not reject ordinary weights, including zeros."""
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    torch.manual_seed(0)
+    layer = nn.Linear(64, 32, bias=False)
+
+    quantizer = AWQQuantizer(layer, AWQConfig(bits=4, group_size=32))
+    for _ in range(4):
+        quantizer.add_batch(torch.randn(4, 64))
+    scale, _ = quantizer.search_scale(), None
+    assert torch.isfinite(scale).all()
+
+
+def test_a_zero_weight_layer_is_still_quantizable():
+    """All-zero weights are finite; the clamp path exists exactly for them."""
+    from llm.quantization.awq import AWQConfig, AWQQuantizer
+
+    layer = nn.Linear(64, 32, bias=False)
+    layer.weight.data.zero_()
+
+    quantizer = AWQQuantizer(layer, AWQConfig(bits=4, group_size=32))
+    quantizer.add_batch(torch.randn(4, 64))
+    assert torch.isfinite(quantizer.search_scale()).all()

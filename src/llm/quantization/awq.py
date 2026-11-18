@@ -228,6 +228,24 @@ class AWQQuantizer:
 
         self.out_features, self.in_features = layer.weight.shape
 
+        # Non-finite weights would survive the whole pipeline and surface only
+        # as NaN in the quantized layer's OUTPUT. Measured: one NaN weight in a
+        # 64x32 layer left 1.6% of the packed ``scales`` NaN, and the quantized
+        # layer then returned NaN for 3.1% of its output elements — a model that
+        # loads and runs but computes garbage, with nothing naming the cause.
+        # ``.clamp(min=1e-8)`` on the scale does NOT help: NaN survives both the
+        # ``abs().max()`` reduction and ``clamp``. This is the same guard the
+        # GGUF exporter applies at its single payload dispatch point.
+        weight = layer.weight
+        if weight.numel() and not torch.isfinite(weight).all():
+            nonfinite = int((~torch.isfinite(weight)).sum())
+            raise ValueError(
+                f"AWQ cannot quantize a layer with non-finite weights: {nonfinite} of "
+                f"{weight.numel()} values are NaN or Inf. A diverged checkpoint has to be "
+                "repaired before quantizing — the NaN would propagate into the scales and "
+                "produce a layer that runs but returns NaN."
+            )
+
         # Group quantization requires the *effective* group size (clamped to
         # in_features, so a group larger than the row is a single group) to
         # divide in_features (the packing path builds

@@ -106,6 +106,21 @@ class GPTQQuantizer:
         # Weight dimensions
         self.out_features, self.in_features = layer.weight.shape
 
+        # Non-finite weights survive GPTQ too and surface only as NaN in the
+        # quantized layer's output: the per-group scale is derived from
+        # ``abs().max()`` (which propagates NaN) and ``.clamp(min=1e-8)`` cannot
+        # remove it, so the NaN reaches the packed scales. Same guard as AWQ and
+        # the GGUF exporter, at the same kind of single entry point.
+        weight = layer.weight
+        if weight.numel() and not torch.isfinite(weight).all():
+            nonfinite = int((~torch.isfinite(weight)).sum())
+            raise ValueError(
+                f"GPTQ cannot quantize a layer with non-finite weights: {nonfinite} of "
+                f"{weight.numel()} values are NaN or Inf. A diverged checkpoint has to be "
+                "repaired before quantizing — the NaN would propagate into the scales and "
+                "produce a layer that runs but returns NaN."
+            )
+
         # Group quantization requires the *effective* group size (clamped to
         # in_features, so a group larger than the row is a single group) to
         # divide in_features: the packing / dequant paths assume an integral

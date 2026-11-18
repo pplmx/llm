@@ -527,3 +527,48 @@ def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
     # 8-bit has no pairing constraint: constructing is fine.
     q8 = GPTQQuantizer(nn.Linear(9, 7), GPTQConfig(bits=8, group_size=3, blocksize=3))
     assert q8 is not None
+
+
+# --- non-finite weights must be REFUSED ------------------------------------
+#
+# The per-group scale is derived from ``abs().max()``, which propagates NaN, and
+# ``.clamp(min=1e-8)`` cannot remove it -- so one NaN weight reached the packed
+# scales and the quantized layer returned NaN for part of its output. Same guard
+# as AWQ and the GGUF exporter.
+
+
+def test_gptq_refuses_a_layer_with_a_nan_weight():
+    """The error must name the count and the remedy, not fail later as NaN."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    layer = nn.Linear(64, 32, bias=False)
+    layer.weight.data[0, 0] = float("nan")
+
+    with pytest.raises(ValueError, match="non-finite") as excinfo:
+        GPTQQuantizer(layer, GPTQConfig(bits=4, group_size=32))
+
+    message = str(excinfo.value)
+    assert "NaN" in message
+    assert "repair" in message.lower(), "the error should say what to do about it"
+
+
+def test_gptq_refuses_a_layer_with_an_inf_weight():
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    layer = nn.Linear(64, 32, bias=False)
+    layer.weight.data[3, 5] = float("inf")
+
+    with pytest.raises(ValueError, match="non-finite"):
+        GPTQQuantizer(layer, GPTQConfig(bits=4, group_size=32))
+
+
+def test_gptq_accepts_finite_weights():
+    """The guard must not reject ordinary weights, including an all-zero layer."""
+    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+
+    torch.manual_seed(0)
+    GPTQQuantizer(nn.Linear(64, 32, bias=False), GPTQConfig(bits=4, group_size=32))
+
+    zero_layer = nn.Linear(64, 32, bias=False)
+    zero_layer.weight.data.zero_()
+    GPTQQuantizer(zero_layer, GPTQConfig(bits=4, group_size=32))
