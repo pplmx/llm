@@ -438,3 +438,135 @@ def test_foreign_import_nonstandard_head_dim_refused(tmp_path):
 
     with pytest.raises(GGUFError, match=r"non-standard head dimensions"):
         load_gguf_model(path)
+
+
+# --- real llama.cpp-written files (external oracle) ------------------------
+#
+# Every fixture above is produced by OUR OWN ``GGUFWriter``, so these tests read
+# back what this repo wrote. That is precisely the blind spot that hid the
+# absolute-offset bug: writer and reader agreed with each other while the
+# official ``gguf`` library rejected every file.
+#
+# The tests below use ``gguf.GGUFWriter`` (the library llama.cpp's tooling is
+# built on) to produce the file, then import it with ``load_gguf_model``. They
+# were written after measuring that the import works: the reader parses 21
+# tensors / 12 metadata keys from an official file, the loader builds a
+# DecoderModel, and the weights match bit-exactly (max|d| = 0.0).
+
+
+def _write_official_gguf(path, *, vocab=64, hidden=32, layers=2, ff=64, seed=7) -> dict[str, np.ndarray]:
+    """Write a llama GGUF with the OFFICIAL gguf-py, returning the tensors used.
+
+    ``gguf`` is an optional (``[compat]``-adjacent) dependency, so callers gate on
+    :func:`_official_gguf` before reaching here.
+    """
+    import gguf
+
+    rng = np.random.default_rng(seed)
+    tensors: dict[str, np.ndarray] = {
+        "token_embd.weight": rng.standard_normal((vocab, hidden)).astype(np.float32),
+        "output_norm.weight": np.ones(hidden, dtype=np.float32),
+        "output.weight": rng.standard_normal((vocab, hidden)).astype(np.float32),
+    }
+    per_layer = {
+        "attn_norm.weight": np.ones(hidden, dtype=np.float32),
+        "attn_q.weight": rng.standard_normal((hidden, hidden)).astype(np.float32),
+        "attn_k.weight": rng.standard_normal((hidden, hidden)).astype(np.float32),
+        "attn_v.weight": rng.standard_normal((hidden, hidden)).astype(np.float32),
+        "attn_output.weight": rng.standard_normal((hidden, hidden)).astype(np.float32),
+        "ffn_norm.weight": np.ones(hidden, dtype=np.float32),
+        "ffn_gate.weight": rng.standard_normal((ff, hidden)).astype(np.float32),
+        "ffn_up.weight": rng.standard_normal((ff, hidden)).astype(np.float32),
+        "ffn_down.weight": rng.standard_normal((hidden, ff)).astype(np.float32),
+    }
+    for layer in range(layers):
+        for name, array in per_layer.items():
+            tensors[f"blk.{layer}.{name}"] = array
+
+    writer = gguf.GGUFWriter(str(path), "llama")
+    writer.add_context_length(32)
+    writer.add_embedding_length(hidden)
+    writer.add_vocab_size(vocab)
+    writer.add_block_count(layers)
+    writer.add_head_count(2)
+    writer.add_head_count_kv(2)
+    writer.add_feed_forward_length(ff)
+    writer.add_rope_dimension_count(hidden // 2)
+    writer.add_layer_norm_rms_eps(1e-5)
+    writer.add_file_type(gguf.LlamaFileType.ALL_F32)
+    for name, array in tensors.items():
+        writer.add_tensor(name, array)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file()
+    writer.close()
+    return tensors
+
+
+def _official_gguf():
+    """Skip when the official gguf library is unavailable."""
+    return pytest.importorskip("gguf", reason="the external oracle is the official gguf library")
+
+
+@pytest.mark.quick
+def test_a_file_written_by_the_official_library_imports(tmp_path):
+    """``load_gguf_model`` must accept a real gguf-py file, not just our own."""
+    _official_gguf()
+    path = tmp_path / "official.gguf"
+    _write_official_gguf(path)
+
+    model = load_gguf_model(str(path))
+
+    assert model is not None
+    state = model.state_dict()
+    # Anti-vacuity: a model with no weights would satisfy "it returned something".
+    assert len(state) >= 10, f"imported model has only {len(state)} tensors: {sorted(state)[:5]}"
+
+
+@pytest.mark.quick
+def test_the_official_files_weights_arrive_bit_exactly(tmp_path):
+    """Importing an official file must not disturb a single weight.
+
+    Comparing only "it loaded" would pass on a model built with random init; the
+    point of an import is that the numbers arrive intact.
+    """
+    _official_gguf()
+    path = tmp_path / "official.gguf"
+    tensors = _write_official_gguf(path)
+
+    model = load_gguf_model(str(path))
+    state = {name: tensor.detach().cpu().numpy() for name, tensor in model.state_dict().items()}
+
+    # Names that map one-to-one between llama.cpp and DecoderModel. (Attention
+    # lands in a fused ``qkv_proj``, so the split ``attn_q``/``attn_k``/``attn_v``
+    # tensors have no single destination and are checked via the fused tensor
+    # below instead.)
+    direct = {
+        "token_embd.weight": "embedding_layer.token_embeddings.weight",
+        "output.weight": "lm_head.weight",
+        "blk.0.ffn_up.weight": "transformer_blocks.0.mlp.gate_proj.weight",
+        "blk.0.ffn_down.weight": "transformer_blocks.0.mlp.fc2.weight",
+    }
+    checked = 0
+    for source_name, destination_name in direct.items():
+        if destination_name not in state:
+            continue
+        expected = tensors[source_name]
+        actual = state[destination_name]
+        assert expected.shape == actual.shape, f"{source_name}: {expected.shape} vs {actual.shape}"
+        max_diff = float(np.abs(expected - actual).max())
+        assert max_diff == 0.0, f"{source_name} -> {destination_name} differed by {max_diff:.3e}"
+        checked += 1
+    assert checked >= 3, f"only {checked} tensor(s) were actually compared; the name mapping drifted"
+
+    # The fused QKV absorbs attn_q/k/v, so check the NUMBERS rather than the
+    # layout: concatenating the three official tensors must reproduce it.
+    fused = state.get("transformer_blocks.0.self_attn.qkv_proj.weight")
+    assert fused is not None, "the imported model has no fused qkv_proj; the mapping changed"
+    stacked = np.concatenate([tensors[f"blk.0.attn_{name}.weight"] for name in ("q", "k", "v")], axis=0)
+    assert fused.shape == stacked.shape, f"fused qkv {fused.shape} vs concatenated {stacked.shape}"
+    max_fused_diff = float(np.abs(fused.astype(np.float64) - stacked.astype(np.float64)).max())
+    assert max_fused_diff == 0.0, (
+        f"the fused qkv_proj differs from the concatenated attn_q/k/v by {max_fused_diff:.3e}; "
+        "the import is reordering or re-scaling attention weights"
+    )
