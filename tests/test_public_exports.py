@@ -182,3 +182,46 @@ def test_the_cli_imports_cleanly():
     from llm.cli.main import app
 
     assert app is not None
+
+
+# --- llm.__version__ must equal the packaged version ----------------------
+#
+# ``llm/__init__.py`` hardcodes ``__version__`` while the release version lives in
+# ``pyproject.toml``. Two hand-maintained copies of one fact drift: changing only
+# ``pyproject.toml`` during a release leaves ``llm --version`` and ``llm.__version__``
+# reporting the previous release. Nothing caught that — setting the module constant
+# to "9.9.9" left every version-related test green.
+
+
+def test_the_dunder_version_matches_the_packaged_version():
+    """``llm.__version__`` must equal the version the package metadata reports."""
+    from importlib.metadata import version
+
+    import llm
+
+    packaged = version("llm")
+
+    assert llm.__version__ == packaged, (
+        f"llm.__version__ is {llm.__version__!r} but the installed metadata says "
+        f"{packaged!r}. src/llm/__init__.py hardcodes the constant, so a release that "
+        "bumps only pyproject.toml leaves `llm --version` reporting the old release."
+    )
+
+
+def test_the_dunder_version_matches_pyproject_directly():
+    """Read the source of truth rather than the installed metadata.
+
+    The installed distribution is rebuilt on every ``uv run``, but a reader of the
+    repository should still see the two files agree.
+    """
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    declared = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+
+    import llm
+
+    assert llm.__version__ == declared, (
+        f"src/llm/__init__.py says {llm.__version__!r}, pyproject.toml says {declared!r}"
+    )

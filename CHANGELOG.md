@@ -463,6 +463,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Pinned pre-commit's tool revisions against the locked versions, which nothing enforced** (tooling). `.pre-commit-config.yaml` pins ruff to `v0.17.0` and ty to `v0.0.87` because pre-commit runs in its own environment and cannot use the project venv — but `pyproject.toml` states only **floors** (`ruff>=0.16.1`, `ty>=0.0.87`). Those agree today (the lock resolved exactly 0.17.0 / 0.0.87), yet nothing stops `uv lock` from resolving a newer ruff while the hook stays behind, at which point a commit passes the hook and fails `just check` — or the reverse — with the difference coming from the tool version rather than the change. Two tests now compare each hook `rev` against `importlib.metadata.version(...)` and fail on drift; bumping the hook to `v0.16.0` turns it red naming both versions. **No product defect** — the versions match today; this pins the invariant before it can rot. Also reviewed the rest of the hook list: builtin hygiene hooks, commitizen, rumdl (with `CHANGELOG.md` and `docs/audits/` excluded for a documented reason), `uv-lock --check`, and a local doctest hook mirroring the CI gate.
 
+
+- **`llm.__version__` is hardcoded and nothing compared it with the release version** (packaging). `src/llm/__init__.py` sets `__version__ = "0.0.5"` by hand while the release version lives in `pyproject.toml` — two hand-maintained copies of one fact. Changing only `pyproject.toml` during a release would leave `llm --version` and `llm.__version__` reporting the previous release. Measured: setting the constant to `"9.9.9"` left **all 15** version-related tests green, so nothing would have noticed. Two tests now assert the constant equals both the installed distribution metadata and `pyproject.toml` read directly; the mutation is caught by both, the first naming the hardcoded-copy hazard. **No product defect** — the two values agree at 0.0.5 today, and the CLI's `llm --version` was verified end to end in an earlier round; this closes the drift path.
+
+### Added
+
 ### Added
 
 ### Added
