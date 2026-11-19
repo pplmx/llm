@@ -70,3 +70,33 @@ def test_the_declaration_list_is_not_empty():
 def test_each_marker_still_appears(marker: str):
     """The markers the Justfile recipes depend on must keep existing."""
     assert marker in _declared_markers(), f"{marker} is used by a `just` recipe but no longer declared"
+
+
+# --- every recipe must run under --frozen --------------------------------
+#
+# ``uv run`` without ``--frozen`` re-resolves the environment when ``uv.lock`` and
+# ``pyproject.toml`` disagree, silently substituting whatever versions resolve
+# instead of failing. CI and Docker use ``uv sync --frozen``, so a recipe that
+# omits the flag can pass locally on a different dependency set than CI installs.
+# ``AGENTS.md`` states the rule ("测试均 `uv run --frozen`"); six static-check
+# recipes were missing it while the test recipes had it.
+
+
+def test_every_uv_run_in_the_justfile_is_frozen():
+    """No ``uv run`` without ``--frozen`` anywhere in the Justfile."""
+    from pathlib import Path
+
+    justfile = (Path(__file__).resolve().parents[1] / "Justfile").read_text(encoding="utf-8")
+
+    offenders: list[str] = []
+    for lineno, line in enumerate(justfile.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped.startswith("uv run"):
+            continue
+        if "--frozen" not in stripped:
+            offenders.append(f"{lineno}: {stripped}")
+
+    assert not offenders, (
+        "these Justfile recipes call `uv run` without `--frozen`, so they can resolve "
+        "a different environment than CI installs:\n  " + "\n  ".join(offenders)
+    )
