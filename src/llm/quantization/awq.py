@@ -60,6 +60,16 @@ class AWQConfig:
     layer_policies: tuple[LayerQuantPolicy, ...] = ()
 
     def __post_init__(self):
+        # Asymmetric AWQ exists nowhere in the pipeline, but the rejection used to
+        # sit deep inside ``search_scale`` — so a user who set ``sym=False`` got a
+        # config that constructed fine, entered the calibration path, and only then
+        # raised. Refuse at construction, which is also what
+        # ``AWQQuantizedLinear.forward``'s docstring already claimed happened.
+        if not self.sym:
+            raise NotImplementedError(
+                "Asymmetric AWQ (sym=False) is not implemented: the quantizer and the "
+                "quantized layer only support symmetric group quantization. Use sym=True."
+            )
         if self.bits not in (4, 8):
             raise ValueError(
                 f"AWQConfig.bits must be 4 or 8, got {self.bits}. "

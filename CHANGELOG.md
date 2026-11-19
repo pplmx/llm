@@ -439,6 +439,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Checked whether last round's missing-rank gap exists in the other multi-process tests; it does not, and the two fixed files were aligned with the stricter form already in use** (testing). All eight files that spawn processes were reviewed: `test_tp_checkpoint_roundtrip.py`, `test_serve_tp_checkpoint.py` and `test_tp_dp_2d_engine.py` already do the strongest thing — `for rank in range(world_size): assert rank in results` — `test_streaming_resume.py` uses `mp.spawn(join=True)` which propagates a child failure directly and keeps no result dict, and `test_ddp.py` / `test_pp_engine.py` / `test_tensor_parallel.py` carry explicit count assertions. So the gap was confined to the two files fixed last round. Those two are now rewritten from `len(out) == world_size` to the per-rank `assert rank in out` form, matching the pattern the healthy files use (it names the exact missing rank rather than only a count). Both suites re-run green (20 + 7). **No product defect and no further gap found.**
 
+
+- **`sym=False` was accepted by both quantization configs and only failed deep in the quantizer** (quantization): asymmetric AWQ and GPTQ are not implemented at all, but `AWQConfig(sym=False)` and `GPTQConfig(sym=False)` constructed fine — the first readable failure was `search_scale`/`quantize`, i.e. **after** the user had loaded a model and run calibration. The layers' own docstrings already claimed otherwise: `AWQQuantizedLinear.forward` documents *"NotImplementedError: If `sym=False` was passed at construction"* while actually raising from `forward`, and the same wording appears in `_gptq_layer` and `_smooth_layer`. Both configs now refuse at construction, in `__post_init__` next to the existing `bits`/`group_size` checks, with a message naming the limitation and the fix. Found by noticing that the coverage config exempts every `raise NotImplementedError` line and asking whether any of those represents an unimplemented feature rather than an abstract interface — these four did. Two tests encoded the old timing (`AWQConfig(sym=False)` then expect the raise from `search_scale`); they are updated to assert the new contract, keeping the same intent, with the reason recorded in their docstrings.
+
+### Added
+
 ### Added
 
 ### Added

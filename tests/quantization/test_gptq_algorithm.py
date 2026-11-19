@@ -407,18 +407,18 @@ def test_add_batch_empty_batch_is_noop():
 
 
 def test_quantize_rejects_asymmetric_with_actionable_message():
-    """sym=False raises NotImplementedError BEFORE entering the column loop (fail-fast)."""
-    from llm.quantization.gptq import GPTQConfig, GPTQQuantizer
+    """sym=False raises NotImplementedError with an actionable message (fail-fast).
 
-    in_f, out_f = 8, 4
-    layer = nn.Linear(in_f, out_f, bias=False)
-    calib = torch.randn(16, in_f)
-
-    q = GPTQQuantizer(layer, GPTQConfig(sym=False))
-    q.add_batch(calib)
+    The refusal now happens when the CONFIG is built rather than inside
+    ``quantize()``: a user setting ``sym=False`` used to get a config that
+    constructed fine, run calibration, and only then hit the error. The intent
+    (asymmetric GPTQ is rejected, and the message says to use sym=True) is
+    unchanged; only the moment moved earlier.
+    """
+    from llm.quantization.gptq import GPTQConfig
 
     with pytest.raises(NotImplementedError, match=r"Asymmetric.*sym=True"):
-        q.quantize()
+        GPTQConfig(sym=False)
 
 
 def test_quantize_rejects_rank_deficient_hessian_with_low_damp():

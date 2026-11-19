@@ -62,6 +62,14 @@ class GPTQConfig:
     layer_policies: tuple[LayerQuantPolicy, ...] = ()
 
     def __post_init__(self):
+        # Same construction-time refusal as AWQConfig: asymmetric GPTQ is not
+        # implemented anywhere in the pipeline, but the error used to surface from
+        # deep inside the quantizer after calibration had already started.
+        if not self.sym:
+            raise NotImplementedError(
+                "Asymmetric GPTQ (sym=False) is not implemented: the quantizer and the "
+                "quantized layer only support symmetric group quantization. Use sym=True."
+            )
         if self.bits not in (4, 8):
             raise ValueError(
                 f"GPTQConfig.bits must be 4 or 8, got {self.bits}. "

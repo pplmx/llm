@@ -342,14 +342,19 @@ def test_awq_clip_ratio_bounds_outliers():
 
 
 def test_awq_search_rejects_asymmetric():
-    """sym=False is a v1 NotImplementedError (asymmetric AWQ is a follow-up)."""
-    from llm.quantization.awq import AWQConfig, AWQQuantizer
+    """sym=False is a v1 NotImplementedError (asymmetric AWQ is a follow-up).
 
-    layer = nn.Linear(8, 8)
-    quantizer = AWQQuantizer(layer, AWQConfig(sym=False))
-    quantizer.add_batch(torch.randn(16, 8))
+    The refusal now happens when the CONFIG is built rather than inside
+    ``search_scale``: a user setting ``sym=False`` used to get a config that
+    constructed fine, run calibration, and only then hit the error — and
+    ``AWQQuantizedLinear.forward``'s docstring already claimed construction-time
+    refusal. The intent (asymmetric AWQ is rejected with a clear message) is
+    unchanged; only the moment moved earlier.
+    """
+    from llm.quantization.awq import AWQConfig
+
     with pytest.raises(NotImplementedError, match="Asymmetric"):
-        quantizer.search_scale()
+        AWQConfig(sym=False)
 
 
 def test_4bit_odd_total_count_fails_fast_per_group_and_per_channel():
