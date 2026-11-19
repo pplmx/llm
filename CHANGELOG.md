@@ -415,6 +415,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Audited the whole public API surface — `__all__`, entry points, and the top-level exports — all intact** (api). Walked every module under `llm.` with `pkgutil.walk_packages` (**188 modules**) and confirmed each one imports: the `unimportable` list the existing test collects but never asserts is genuinely empty, so no `__all__` check is being silently skipped. Every declared entry point resolves to a real attribute — `llm.models/decoder`, `llm.models/regression_mlp`, `llm.generation_backends/{eager,batched}`, `llm.data_sources/{local,hf}`, `llm.export_backends/{gguf,torchscript}` (8/8, with `llm.peft_methods` intentionally empty and documented as code-registered). `llm.__all__` names `DecoderModel`, `SimpleCharacterTokenizer`, `__version__`, `batch_generate`, `generate`, `stream_generate` and all six exist. **No product defect and no code change.** Worth noting for future rounds: the existing `test_every_module_all_entry_resolves` deliberately tolerates unimportable modules (they are collected into a list and never asserted), which is the right separation of concerns but means an import failure would not show up there — it is empty today, verified directly.
 
+
+- **Ran the three `Usage::` docstring examples that doctest cannot reach — all correct** (docs). Only three docstrings use the reStructuredText `Usage::` block instead of `>>>`, so `pytest --doctest-modules` never executes them. `GGUFWriter`'s example (`add_metadata` → `add_tensor(ggml_type="q8_0")` → `write()`) ran verbatim against a real numpy weight: it wrote a file that `gguf.GGUFReader` opens with 1 tensor. `export_model("onnx", model, "out.onnx", input_shape=(1, 32))` — the one carrying `# doctest: +SKIP` — also ran, producing a 93858-byte ONNX file. A first attempt at the second failed with "Sequence endpoint 32 exceeds maximum sequence length 16", which is **my test model, not the example**: the snippet assumes a model whose `max_seq_len` covers `input_shape`, and with `max_seq_len=32` it succeeds. The third (`cli/main.py`) documents the CLI, which was exercised end to end in an earlier round. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
