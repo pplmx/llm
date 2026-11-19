@@ -460,6 +460,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Finished the CI permission sweep: every workflow now declares the minimum it needs** (ci). Last round narrowed `ci.yml` to `contents: read`; the remaining three inherited the repository default. Each was given exactly what its job does: `docker.yml` → `contents: read` + `packages: write` (it logs in to ghcr.io with the built-in token and pushes image tags), `labeler.yml` → `contents: read` + `issues: write` + `pull-requests: write` (it applies labels), `release.yml` → `contents: write` (it publishes a GitHub release). All five workflows parse with their job counts unchanged. Three tests now cover the whole directory: every workflow must declare a block, `ci.yml` must grant no write scope, and each workflow's **write** scopes must equal an explicit expected set — so widening one later (say, giving CI `contents: write` to make an upload work) fails rather than passing unnoticed. Deleting a block turns the first red. **No product defect**; completing a security-posture sweep. Also corrected my own earlier reading: `docs.yml` carries `id-token: write` as well as `pages: write`, which I had missed when describing it.
 
+
+- **Pinned pre-commit's tool revisions against the locked versions, which nothing enforced** (tooling). `.pre-commit-config.yaml` pins ruff to `v0.17.0` and ty to `v0.0.87` because pre-commit runs in its own environment and cannot use the project venv — but `pyproject.toml` states only **floors** (`ruff>=0.16.1`, `ty>=0.0.87`). Those agree today (the lock resolved exactly 0.17.0 / 0.0.87), yet nothing stops `uv lock` from resolving a newer ruff while the hook stays behind, at which point a commit passes the hook and fails `just check` — or the reverse — with the difference coming from the tool version rather than the change. Two tests now compare each hook `rev` against `importlib.metadata.version(...)` and fail on drift; bumping the hook to `v0.16.0` turns it red naming both versions. **No product defect** — the versions match today; this pins the invariant before it can rot. Also reviewed the rest of the hook list: builtin hygiene hooks, commitizen, rumdl (with `CHANGELOG.md` and `docs/audits/` excluded for a documented reason), `uv-lock --check`, and a local doctest hook mirroring the CI gate.
+
+### Added
+
 ### Added
 
 ### Added

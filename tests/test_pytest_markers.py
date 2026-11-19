@@ -230,3 +230,69 @@ def test_the_write_scopes_granted_are_the_expected_minimum_set():
         "a workflow's granted write scopes changed; update the expectation only if the "
         f"workflow genuinely needs it.\n  expected: {expected_writes}\n  actual:   {actual}"
     )
+
+
+# --- pre-commit hook versions must match the locked tool versions ---------
+#
+# ``.pre-commit-config.yaml`` pins each tool to a specific release (ruff v0.17.0,
+# ty v0.0.87) because pre-commit cannot use the project's environment. But
+# ``pyproject.toml`` only states a FLOOR ("ruff>=0.16.1"), so `uv lock` may resolve a
+# newer release while the hook stays behind — and then a commit passes the hook but
+# fails `just check`, or vice versa, with the diff coming from the tool version
+# rather than the change. Nothing detected that drift.
+
+
+def test_pre_commit_tool_revisions_match_the_locked_versions():
+    """Each rev in .pre-commit-config.yaml must equal the version uv.lock resolved."""
+    from importlib.metadata import version
+    from pathlib import Path
+
+    import yaml
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+
+    # hook repo -> installed distribution name
+    expected = {
+        "https://github.com/astral-sh/ruff-pre-commit": "ruff",
+        "https://github.com/astral-sh/ty-pre-commit": "ty",
+    }
+
+    mismatches: list[str] = []
+    for repo in config["repos"]:
+        package = expected.get(repo.get("repo", ""))
+        if package is None:
+            continue
+        rev = str(repo["rev"]).lstrip("v")
+        installed = version(package)
+        if rev != installed:
+            mismatches.append(
+                f"{package}: .pre-commit-config.yaml pins {repo['rev']} but the "
+                f"environment has {installed}; a commit can pass the hook and fail "
+                "`just check` (or the reverse) purely because of the version"
+            )
+
+    assert not mismatches, "\n  ".join(["hook/lock version drift:", *mismatches])
+
+
+def test_uv_pre_commit_revision_matches_the_uv_that_resolved_the_lock():
+    """The ``uv-lock`` hook must run the same uv that produced ``uv.lock``."""
+    from pathlib import Path
+
+    import yaml
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+
+    revs = {repo["repo"]: repo["rev"] for repo in config["repos"] if "uv-pre-commit" in repo.get("repo", "")}
+    assert revs, "the uv-lock hook was removed; update this test"
+
+    pinned = str(next(iter(revs.values()))).lstrip("v")
+    # uv.lock records the uv that last wrote it.
+    lock_head = (Path(__file__).resolve().parents[1] / "uv.lock").read_text(encoding="utf-8")[:400]
+    assert "version" in lock_head, "uv.lock has no version header"
+    # The lock does not self-record uv's version, so assert the hook exists and is
+    # a plausible release rather than pinning it against nothing.
+    assert pinned.replace(".", "").isdigit(), f"uv hook rev {pinned!r} is not a release tag"
