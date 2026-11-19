@@ -27,9 +27,16 @@ sync:
 dev:
     uv sync --all-groups --all-extras
 
-# Sync the optional `perf` extra (flash-attn) from the Astral pre-built wheels.
+# NOTE `uv sync` is exclusive: this prunes every extra it does not name, so running
+# it alone drops `eval` (and `lm_eval`), failing six evaluation tests.
+# Sync only the optional `perf` extra (flash-attn) from the Astral wheels.
 sync-perf:
     uv sync --extra perf
+
+# NOTE use this rather than `sync-perf` before the test gates -- sync is exclusive.
+# Sync the dev group and every runtime extra the suite needs, flash-attn included.
+sync-full:
+    uv sync --group dev --extra perf --extra eval --extra logging --extra dvc --extra compat --extra streaming
 
 # Build wheel
 build:

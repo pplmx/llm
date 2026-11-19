@@ -1111,6 +1111,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Added the `[tool.uv.sources]` half of the flash-attn index binding, which hand-editing had missed** (deps). Declaring `[[tool.uv.index]]` alone is not enough: uv's dependency-confusion protection stops at the **first** index that carries a package, so PyPI's sdist would still win the race. Running `uv add --optional perf flash-attn --index astral-cu130=…` in a scratch project — the project's only supported way to add a dependency — emits **both** halves, and the source pin is the one a hand-written block drops. `uv.lock` now records the routing per requirement (`{ name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.8.3.post1", index = "https://wheels.astral.sh/simple/cu130/" }`), so the binding is a property of the package rather than an inference from index order. Resolved versions are unchanged (`2.8.3.post1+cu.13.0.torch.2.14`), so this hardens the existing wiring rather than changing behaviour; `uv sync --frozen --extra perf` still installs the wheel and imports. The guard test now also requires the source pin, and deleting it turns the test red. Documentation drops the pip troubleshooting in favour of the `uv add` workflow.
 
+
+- **`uv sync` is exclusive, so installing one extra silently removed the others and broke the gates** (tooling). Each `uv sync` prunes whatever it does not name: running `uv sync --extra perf` dropped the `eval` extra, and six `lm_eval` tests failed with `ImportError`; running it again with `--group dev` re-added ruff/ty and _removed perf_. Hit twice in one round before the pattern was obvious. Added `just sync-full`, which names the dev group plus every runtime extra the suite needs, and a note on `sync-perf` recording that it prunes. Also hardened the pre-commit version test: it now catches `PackageNotFoundError` and asserts on a `checked` counter instead of propagating a raw metadata error, so a pruned environment reports "ruff and ty are not installed, so the revisions were not compared" rather than an opaque traceback. Two recipe descriptions were also moved adjacent to their recipes — `just --list` only renders the **last** comment line above a recipe, so explanations placed after the description truncated it mid-sentence.
+
+### Fixed
+
 ### Fixed
 
 ### Fixed

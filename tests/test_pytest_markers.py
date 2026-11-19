@@ -244,7 +244,7 @@ def test_the_write_scopes_granted_are_the_expected_minimum_set():
 
 def test_pre_commit_tool_revisions_match_the_locked_versions():
     """Each rev in .pre-commit-config.yaml must equal the version uv.lock resolved."""
-    from importlib.metadata import version
+    from importlib.metadata import PackageNotFoundError, version
     from pathlib import Path
 
     import yaml
@@ -260,12 +260,21 @@ def test_pre_commit_tool_revisions_match_the_locked_versions():
     }
 
     mismatches: list[str] = []
+    checked = 0
     for repo in config["repos"]:
         package = expected.get(repo.get("repo", ""))
         if package is None:
             continue
         rev = str(repo["rev"]).lstrip("v")
-        installed = version(package)
+        try:
+            installed = version(package)
+        except PackageNotFoundError:
+            # `uv sync --extra ...` prunes anything not requested, so a
+            # dependency-group tool like ruff or ty can be absent while the test
+            # suite still runs. There is nothing to compare against then; the
+            # drift this test hunts only exists when the tool is installed.
+            continue
+        checked += 1
         if rev != installed:
             mismatches.append(
                 f"{package}: .pre-commit-config.yaml pins {repo['rev']} but the "
@@ -273,6 +282,10 @@ def test_pre_commit_tool_revisions_match_the_locked_versions():
                 "`just check` (or the reverse) purely because of the version"
             )
 
+    assert checked, (
+        "neither ruff nor ty is installed, so the pre-commit revisions were not "
+        "compared with anything; install the dev group to exercise this test"
+    )
     assert not mismatches, "\n  ".join(["hook/lock version drift:", *mismatches])
 
 
