@@ -454,6 +454,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ci.yml` never pinned a Python version while `docs.yml` pinned 3.14** (ci). `requires-python = ">=3.14"` is a **range**, so on a runner that also has 3.15 `uv` may legally choose it — and this host does have both. `docs.yml` sets `python-version: '3.14'` via `actions/setup-python`, but all six `setup-uv` blocks in `ci.yml` carried no version at all, so the lint / doctest / test / security jobs and the docs job could resolve **different interpreters**. That is the kind of divergence that stays invisible until a behaviour differs between 3.14 and 3.15 and shows up in only whichever job happened to get the newer one. All six blocks now pin `python-version: "3.14"` with the reason recorded inline; the workflow still parses with all six jobs intact. A test reads both workflows, takes whatever the docs job pins, and requires every `setup-uv` block in `ci.yml` to carry the same value — deleting one pin turns it red (`6 setup-uv blocks but only 5 carry python-version`). **No product defect**; a CI-reliability gap that cannot be observed from this host, which is exactly why it needs to be asserted rather than checked by eye.
 
+
+- **`ci.yml` ran with the repository's default (possibly read-write) token** (ci). Four of the five workflows declared no `permissions:` block; only `docs.yml` narrowed itself (`contents: read` + `pages: write`, which it needs to deploy Pages). The CI jobs only check out the repo, run lint/test/docs-build and upload artefacts — artefact upload uses its own scoped token — so inheriting a default that may grant write across every scope is privilege the workflow never uses. `ci.yml` now declares `contents: read` with the reasoning inline; the workflow still parses with all six jobs and four triggers intact, and its docs job only *builds* mkdocs, so it correctly does **not** need the `pages: write` that `docs.yml` carries. Two tests pin it: the block must exist with `contents: read`, and it must grant **no** write scope. Deleting the block turns the first red. **No product defect**; a security-posture gap. Checked in the same pass: every `actions/checkout` is `v7` and every `setup-uv` is `v10.3.3` across all workflows, so no action-version drift.
+
+### Added
+
 ### Added
 
 ### Added

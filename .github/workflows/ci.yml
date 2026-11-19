@@ -1,5 +1,13 @@
 name: CI # Continuous Integration
 
+# Least privilege: these jobs only read the repository and upload build artefacts
+# (artefact upload uses its own scoped token, not the repo token). Without a
+# block, the workflow inherits the repository default, which can be read-write for
+# all scopes — the same reason ``docs.yml`` already narrows itself to
+# ``contents: read`` + ``pages: write``.
+permissions:
+    contents: read
+
 on:
     push:
         branches:

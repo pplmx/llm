@@ -138,3 +138,46 @@ def test_ci_pins_python_where_docs_pins_python():
         f'python-version: "{docs_pin}" (the pin docs.yml uses), so jobs can run on '
         "different interpreters"
     )
+
+
+# --- CI workflows must declare minimum token permissions -------------------
+#
+# A workflow without a `permissions:` block inherits the repository default, which
+# can be read-write across all scopes. `docs.yml` already narrows itself to
+# `contents: read` + `pages: write` (it deploys Pages); `ci.yml` narrows to
+# `contents: read` (it only reads the repo and uploads artefacts, which uses a
+# separate scoped token). The permissive default is a privilege the jobs never use.
+
+
+def test_ci_declares_read_only_permissions():
+    """`ci.yml` must declare `contents: read` rather than inheriting the default."""
+    from pathlib import Path
+
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+    parsed = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+
+    permissions = parsed.get("permissions")
+    assert permissions is not None, (
+        "ci.yml has no top-level `permissions:` block, so it inherits the repository "
+        "default (possibly read-write for every scope) instead of the read-only access "
+        "its jobs actually need"
+    )
+    assert permissions.get("contents") == "read", f"ci.yml should narrow contents to read, got {permissions!r}"
+
+
+def test_ci_does_not_grant_write_scopes_it_never_uses():
+    """The CI jobs read the repo and upload artefacts; they never push back."""
+    from pathlib import Path
+
+    import yaml
+
+    workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci.yml"
+    permissions = yaml.safe_load(workflow.read_text(encoding="utf-8"))["permissions"]
+
+    write_scopes = {scope for scope, level in permissions.items() if level == "write"}
+    assert not write_scopes, (
+        f"ci.yml grants write access to {sorted(write_scopes)}, but no job in it needs "
+        "to push commits, releases, pages or packages"
+    )
