@@ -1989,3 +1989,126 @@ class TestWeightDecay:
         other = torch.nn.Parameter(torch.zeros(1))
         with pytest.raises(ValueError, match="Invalid weight_decay value"):
             torch.optim.AdamW([other], lr=1e-3, weight_decay=-0.1)
+
+
+class TestTokenizerFitsModelVocabulary:
+    """Training must refuse a vocab_size the tokenizer can overrun.
+
+    ``model.vocab_size`` is a config number while a ``simple`` tokenizer built
+    without ``tokenizer_path`` takes its vocabulary from ``DEFAULT_SIMPLE_CORPUS``
+    — a fixed 103-entry printable-ASCII set, unrelated to the training corpus. A
+    deliberately small ``vocab_size: 64`` therefore emitted ids up to 102. On CPU
+    that raised ``IndexError: index out of range in self``; on CUDA the same input
+    tripped an assertion inside ``vectorized_gather_kernel`` and killed the process
+    with SIGABRT (exit 134), naming nothing useful.
+    """
+
+    def test_a_too_small_vocab_size_is_refused(self):
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        class _Tok:
+            vocab_size = 103
+
+        cfg = Config(model=ModelConfig(vocab_size=64), data=DataConfig(tokenizer_type="simple"))
+
+        with pytest.raises(ValueError, match=r"tokenizer emits ids up to 102 .* model\.vocab_size is 64"):
+            _check_tokenizer_fits_model_vocabulary(cfg, _Tok())
+
+    def test_the_message_names_the_default_corpus_so_the_fix_is_clear(self):
+        """The actionable part: why 103, and the two ways to resolve it."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        class _Tok:
+            vocab_size = 103
+
+        cfg = Config(model=ModelConfig(vocab_size=64), data=DataConfig(tokenizer_type="simple"))
+
+        with pytest.raises(ValueError, match=r"tokenizer emits ids") as excinfo:
+            _check_tokenizer_fits_model_vocabulary(cfg, _Tok())
+
+        message = str(excinfo.value)
+        assert "DEFAULT_SIMPLE_CORPUS" in message, "must explain where 103 comes from"
+        assert "tokenizer_path" in message, "must name the alternative for a fitted tokenizer"
+
+    def test_an_exact_fit_is_allowed(self):
+        """vocab_size == tokenizer size is the normal case and must pass."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        class _Tok:
+            vocab_size = 103
+
+        _check_tokenizer_fits_model_vocabulary(
+            Config(model=ModelConfig(vocab_size=103), data=DataConfig(tokenizer_type="simple")),
+            _Tok(),
+        )
+
+    def test_a_larger_vocab_size_is_allowed(self):
+        """Padding the table beyond the tokenizer is legitimate (future-proofing)."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        class _Tok:
+            vocab_size = 103
+
+        _check_tokenizer_fits_model_vocabulary(
+            Config(model=ModelConfig(vocab_size=50257), data=DataConfig(tokenizer_type="simple")),
+            _Tok(),
+        )
+
+    def test_a_tokenizer_without_vocab_size_is_skipped(self):
+        """An exotic tokenizer exposing no ``vocab_size`` must not crash the check."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        class _Tok:
+            pass
+
+        _check_tokenizer_fits_model_vocabulary(
+            Config(model=ModelConfig(vocab_size=64), data=DataConfig(tokenizer_type="simple")),
+            _Tok(),
+        )
+
+    def test_a_missing_tokenizer_is_skipped(self):
+        """``None`` (a task with no tokenizer) must not crash the check."""
+        from llm.models.config import ModelConfig
+        from llm.training.core.config import Config, DataConfig
+        from llm.training.train import _check_tokenizer_fits_model_vocabulary
+
+        _check_tokenizer_fits_model_vocabulary(
+            Config(model=ModelConfig(vocab_size=64), data=DataConfig(tokenizer_type="simple")),
+            None,
+        )
+
+
+def test_train_worker_actually_invokes_the_vocabulary_guard():
+    """The guard must be WIRED IN, not merely importable.
+
+    Every test above calls ``_check_tokenizer_fits_model_vocabulary`` directly, so
+    deleting its call site in ``train_worker`` would leave them all green while the
+    CLI happily trained into the SIGABRT again. There is no cheap way to run
+    ``train_worker`` in-process (it spawns/binds a process group), so this asserts
+    the call exists in the source, immediately after the data module's
+    ``setup()`` — which is the point at which the tokenizer exists.
+    """
+    import inspect
+
+    from llm.training import train as train_module
+
+    source = inspect.getsource(train_module.train_worker)
+
+    assert "_check_tokenizer_fits_model_vocabulary(" in source, (
+        "train_worker no longer calls the vocabulary guard; a too-small vocab_size "
+        "would crash the process on CUDA again instead of raising a clear error"
+    )
+
+    setup_index = source.index("data_module.setup()")
+    call_index = source.index("_check_tokenizer_fits_model_vocabulary(")
+    assert call_index > setup_index, "the guard must run AFTER data_module.setup(), which is what builds the tokenizer"

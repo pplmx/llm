@@ -73,6 +73,48 @@ def _check_data_window_fits_model_context(config: Config) -> None:
         )
 
 
+def _check_tokenizer_fits_model_vocabulary(config: Config, tokenizer: Any) -> None:
+    """Refuse to train when the tokenizer emits ids the embedding table lacks.
+
+    ``model.vocab_size`` and the tokenizer's real vocabulary are set in two
+    different places: the config names a number, while a ``simple`` tokenizer
+    built without ``tokenizer_path`` takes its vocabulary from
+    ``DEFAULT_SIMPLE_CORPUS`` — a fixed printable-ASCII set of **103** entries that
+    does NOT depend on the training corpus. Writing a deliberately tiny model
+    (``vocab_size: 64``) therefore produced ids up to 102.
+
+    On CPU that surfaced as ``IndexError: index out of range in self`` from
+    ``F.embedding``, which at least names the operation. On CUDA the same input
+    tripped an assertion inside ``vectorized_gather_kernel`` and aborted the whole
+    process with SIGABRT (exit 134) and a wall of
+    ``block: [46,0,0], thread: [...] Assertion
+
+    ``ind >=0 && ind < ind_dim_size`` failed`` lines — no mention of the
+    vocabulary at all. A config mistake should not take down the interpreter.
+
+    This lives at the training entry point, next to
+    :func:`_check_data_window_fits_model_context`, for the same reason: the check
+    needs the built tokenizer, and ``Config`` is also constructed by serving and
+    generation paths that never train.
+    """
+    actual = getattr(tokenizer, "vocab_size", None)
+    if not isinstance(actual, int):
+        return
+    if actual > config.model.vocab_size:
+        raise ValueError(
+            f"tokenizer emits ids up to {actual - 1} but model.vocab_size is "
+            f"{config.model.vocab_size}: the embedding table cannot index them. "
+            + (
+                "The 'simple' tokenizer derives its vocabulary from "
+                "DEFAULT_SIMPLE_CORPUS (103 printable-ASCII entries), not from "
+                "your dataset, so set model.vocab_size to at least 103 — or pass "
+                "data.tokenizer_path to load a tokenizer fitted to your corpus."
+                if config.data.tokenizer_type == "simple"
+                else "Increase model.vocab_size to match the tokenizer."
+            )
+        )
+
+
 def train_worker(
     local_rank: int,
     world_size: int,
@@ -105,6 +147,7 @@ def train_worker(
         data_module = task_spec.data_module_factory(config)
         data_module.prepare_data()
         data_module.setup()
+        _check_tokenizer_fits_model_vocabulary(config, getattr(data_module, "tokenizer", None))
 
         task = task_spec.task_cls(config, data_module)
 
