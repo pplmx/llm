@@ -436,6 +436,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Two multi-process test helpers could report success without asserting anything** (testing). `test_zero_optimizer._run_spawn` and `test_zero_resume._run` both collect per-rank payloads into a `manager.dict()`, raise if any payload carries an `error`, and hand the dict back — but neither checked that one payload per rank actually **arrived**. Every caller then does `for rank, payload in out.items(): assert ...`, so a worker that dies before reaching its `except` block (OOM-killed, a segfault in native code, or a failure during import) leaves `out` empty or short and the loop body simply never runs: the test passes while verifying nothing. Both helpers now assert `len(out) == world_size` and name the missing ranks. This is a **test-integrity gap rather than a product defect** — the product code was never wrong — but it is exactly the fake-passing shape this series has been hunting, and it sat in the two files that verify the most delicate distributed invariants. Both suites re-run green (20 + 7 passed) with the guards in place, so they do not fire on the healthy path.
 
+
+- **Checked whether last round's missing-rank gap exists in the other multi-process tests; it does not, and the two fixed files were aligned with the stricter form already in use** (testing). All eight files that spawn processes were reviewed: `test_tp_checkpoint_roundtrip.py`, `test_serve_tp_checkpoint.py` and `test_tp_dp_2d_engine.py` already do the strongest thing — `for rank in range(world_size): assert rank in results` — `test_streaming_resume.py` uses `mp.spawn(join=True)` which propagates a child failure directly and keeps no result dict, and `test_ddp.py` / `test_pp_engine.py` / `test_tensor_parallel.py` carry explicit count assertions. So the gap was confined to the two files fixed last round. Those two are now rewritten from `len(out) == world_size` to the per-rank `assert rank in out` form, matching the pattern the healthy files use (it names the exact missing rank rather than only a count). Both suites re-run green (20 + 7). **No product defect and no further gap found.**
+
+### Added
+
 ### Added
 
 ### Added

@@ -203,11 +203,11 @@ def _run(checkpoint_dir: Path, *, resume: bool, backend: str = "gloo") -> dict:
     # rank. Every caller iterates ``out.items()``, so a missing rank would make
     # part of the assertion silently not run. Same guard as
     # ``test_zero_optimizer._run_spawn``.
-    assert len(out) == WORLD_SIZE, (
-        f"only {len(out)} of {WORLD_SIZE} ranks reported results "
-        f"(missing {sorted(set(range(WORLD_SIZE)) - set(out))}); "
-        "a worker died before its except block could record an error"
-    )
+    for rank in range(WORLD_SIZE):
+        assert rank in out, (
+            f"rank {rank} produced no result (got {sorted(out)}); "
+            "a worker died before its except block could record an error"
+        )
     return out
 
 

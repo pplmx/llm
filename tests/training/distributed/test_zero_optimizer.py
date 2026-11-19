@@ -138,12 +138,12 @@ def _run_spawn(worker, world_size: int) -> dict:
     # to ``results``. Every caller then does ``for rank, payload in out.items()``,
     # whose body would never run, and the test would pass while doing nothing.
     # Require one payload per rank so a silent total crash cannot look green.
-    if len(out) != world_size:
-        missing = sorted(set(range(world_size)) - set(out))
-        raise AssertionError(
-            f"only {len(out)} of {world_size} ranks reported results (missing {missing}); "
-            "a worker died before its except block could record an error"
-        )
+    for rank in range(world_size):
+        if rank not in out:
+            raise AssertionError(
+                f"rank {rank} produced no result (got {sorted(out)}); "
+                "a worker died before its except block could record an error"
+            )
     return out
 
 
