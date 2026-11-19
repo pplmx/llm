@@ -445,6 +445,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Audited the remaining coverage `exclude_lines` patterns; one was dead and is removed** (tooling). Following last round's `raise NotImplementedError` finding, the other two questionable entries were checked. `pass` is legitimate: all 41 occurrences are single-statement no-ops in abstract-method stubs and deliberate hook overrides (`load_checkpoint_state`, `prepare_data` on modules with nothing to prepare), and an AST scan confirms **zero** `except ...: pass` handlers in `src/llm`, so nothing is swallowing exceptions. `if self.debug:` was **dead** — no code in `src/llm` has a `debug` attribute at all, so the pattern matched nothing; left in place it would have silently excluded *both* arms of any future `if self.debug:` verbose-logging branch. Removed, with a note in `pyproject.toml` recording why, and coverage re-measured at **85.87%** against the 77% bar. **No product defect**; this is removing a trap rather than fixing a fault.
 
+
+- **Checked whether `pytest.toml`'s warning filters hide anything of ours; they do not** (testing). `filterwarnings` has two entries — a torch `DeprecationWarning` about the `device=` argument and a module-reimport notice — both aimed at third-party noise rather than this repo's output. Verified by the opposite move: re-running the suite with `-W error::DeprecationWarning` raises exactly **3** failures, all the same message from `serving/loader.py` ("Loading legacy checkpoint format … run `llm migrate-ckpt`") in `test_checkpoint_e2e.py`, whose fixtures deliberately build a legacy `.pt` to exercise the migration path. That warning is **not** in the filter list and is not escalated by default, so the normal gate reports it without failing — correct behaviour for a supported-but-deprecated input. **No product defect and no code change.** Worth recording the technique: turning a warning class into an error is a cheap way to find out what a `filterwarnings` block is actually suppressing, and here the answer was "nothing of ours".
+
+### Added
+
 ### Added
 
 ### Added
