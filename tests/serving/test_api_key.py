@@ -474,3 +474,40 @@ class TestPlaceholderKeysAreRefused:
         monkeypatch.setenv("LLM_SERVING_API_KEY", "9f2c47a1b83d05e6c4712f8a0d3b96e5a7c21d4f60b8e39a5c7d21f08b3a6e4c")
         cfg = ServingConfig.from_yaml(Path(__file__).resolve().parents[2] / "configs" / "serve_pretrained.yaml")
         assert cfg.api_key == "9f2c47a1b83d05e6c4712f8a0d3b96e5a7c21d4f60b8e39a5c7d21f08b3a6e4c"
+
+
+# --- the Docker image's import path must survive the stage split ----------
+#
+# ``uv sync`` installs this project in EDITABLE mode, so ``site-packages`` gets an
+# ``llm.pth`` containing the ABSOLUTE path of the build-time source tree. The
+# Dockerfile builds in ``/app`` and then copies only ``src/`` (plus the venv) into
+# the final stage — so the ``.pth`` is only valid if the two ``WORKDIR``s agree and
+# the copy lands at the same relative place. If either changes, ``import llm``
+# fails inside the image at runtime with ModuleNotFoundError, which no test in
+# this repo would notice because nothing runs the image here.
+#
+# ``just image`` cannot be executed in this environment (no docker), so this pins
+# the invariant in source instead.
+
+
+def test_dockerfile_build_and_run_paths_agree():
+    """The venv is built in /app and consumed from /app, copying src to ./src."""
+    from pathlib import Path
+
+    dockerfile = Path(__file__).resolve().parents[2] / "Dockerfile"
+    text = dockerfile.read_text(encoding="utf-8")
+
+    # Builder and final stage must both use /app, or the editable .pth dangles.
+    assert text.count("WORKDIR /app") >= 2, (
+        "both the builder and the final stage must WORKDIR /app; the editable "
+        "install writes an absolute llm.pth that only resolves at that path"
+    )
+
+    # The final stage must carry the source tree at the SAME relative location.
+    assert "COPY src ./src" in text, (
+        "the final stage must place the package at /app/src to match the "
+        "builder's /app/src that the editable .pth points at"
+    )
+
+    # And the venv must come from the stage that installed it.
+    assert "COPY --from=builder /app/.venv /app/.venv" in text
