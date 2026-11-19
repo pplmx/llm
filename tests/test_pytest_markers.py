@@ -100,3 +100,41 @@ def test_every_uv_run_in_the_justfile_is_frozen():
         "these Justfile recipes call `uv run` without `--frozen`, so they can resolve "
         "a different environment than CI installs:\n  " + "\n  ".join(offenders)
     )
+
+
+# --- CI must pin the same interpreter the docs workflow pins ---------------
+#
+# ``requires-python = ">=3.14"`` is a RANGE, so `uv` may legally pick a newer
+# interpreter on a runner that has one (3.15 exists). ``docs.yml`` pins 3.14
+# explicitly via ``actions/setup-python``; ``ci.yml`` used to leave every
+# ``setup-uv`` block unpinned, so the lint/test jobs and the docs job could run on
+# different interpreters — and a future 3.15-only behaviour would surface only in
+# whichever job happened to get it.
+
+
+def test_ci_pins_python_where_docs_pins_python():
+    """Every ``setup-uv`` block in ci.yml must carry the same python-version."""
+    from pathlib import Path
+
+    import yaml
+
+    workflows = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    ci_text = (workflows / "ci.yml").read_text(encoding="utf-8")
+    docs_text = (workflows / "docs.yml").read_text(encoding="utf-8")
+
+    # What does the docs job pin? Follow it rather than hardcoding.
+    docs_pin = None
+    for step in yaml.safe_load(docs_text)["jobs"].values():
+        for action in step.get("steps", []):
+            with_ = action.get("with") or {}
+            if with_.get("python-version"):
+                docs_pin = str(with_["python-version"])
+    assert docs_pin, "docs.yml no longer pins python-version; update this test"
+
+    blocks = ci_text.count("uses: astral-sh/setup-uv")
+    pinned = ci_text.count(f'python-version: "{docs_pin}"')
+    assert pinned >= blocks, (
+        f"ci.yml has {blocks} setup-uv blocks but only {pinned} carry "
+        f'python-version: "{docs_pin}" (the pin docs.yml uses), so jobs can run on '
+        "different interpreters"
+    )

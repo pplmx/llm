@@ -26,6 +26,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     # setup-uv's default cache key glob is
                     # ``**/*requirements*.txt``; this repo has no such file, so
@@ -82,6 +88,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     cache-dependency-glob: uv.lock
             -   name: Verify lockfile is up to date
@@ -108,6 +120,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     # setup-uv's default cache key glob is
                     # ``**/*requirements*.txt``; this repo has no such file, so
@@ -215,6 +233,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     cache-dependency-glob: uv.lock
 
@@ -255,6 +279,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     cache-dependency-glob: uv.lock
 
@@ -301,6 +331,12 @@ jobs:
             -   name: Set up UV Environment
                 uses: astral-sh/setup-uv@v10.3.3
                 with:
+                    # Pin the interpreter: ``requires-python = ">=3.14"`` would
+                    # otherwise let `uv` pick whatever 3.14+ it prefers on the
+                    # runner (3.15 exists), while ``docs.yml`` pins 3.14 — so the
+                    # lint/test jobs and the docs job could run on different
+                    # interpreters. ``uv.lock`` is resolved for ``>=3.14``.
+                    python-version: "3.14"
                     enable-cache: true
                     cache-dependency-glob: uv.lock
 

@@ -451,6 +451,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Six `Justfile` recipes ran `uv run` without `--frozen`, diverging from what CI and Docker install** (tooling). All 20 recipe invocations were reviewed; the 14 test/build ones already carried `--frozen`, but `just ruff` / `just ty` / `just check`'s three lint calls used bare `uv run --group dev`. Without the flag, `uv` **re-resolves** the environment when `uv.lock` and `pyproject.toml` disagree instead of failing, so those recipes could pass locally against a different dependency set than the `uv sync --frozen` CI and Dockerfile install — the exact discrepancy `AGENTS.md` forbids ("测试均 `uv run --frozen`"). `--frozen --group dev` composes fine (verified directly), so all six now carry it and `just ruff` / `just ty` / `just check` re-run green. A test walks every `uv run` line in the Justfile and fails on any without `--frozen`; stripping one turns it red with the offending line number. **No product defect** — the tools resolved correctly today, but the recipes were not enforcing the pin they claimed to.
 
+
+- **`ci.yml` never pinned a Python version while `docs.yml` pinned 3.14** (ci). `requires-python = ">=3.14"` is a **range**, so on a runner that also has 3.15 `uv` may legally choose it — and this host does have both. `docs.yml` sets `python-version: '3.14'` via `actions/setup-python`, but all six `setup-uv` blocks in `ci.yml` carried no version at all, so the lint / doctest / test / security jobs and the docs job could resolve **different interpreters**. That is the kind of divergence that stays invisible until a behaviour differs between 3.14 and 3.15 and shows up in only whichever job happened to get the newer one. All six blocks now pin `python-version: "3.14"` with the reason recorded inline; the workflow still parses with all six jobs intact. A test reads both workflows, takes whatever the docs job pins, and requires every `setup-uv` block in `ci.yml` to carry the same value — deleting one pin turns it red (`6 setup-uv blocks but only 5 carry python-version`). **No product defect**; a CI-reliability gap that cannot be observed from this host, which is exactly why it needs to be asserted rather than checked by eye.
+
+### Added
+
 ### Added
 
 ### Added
