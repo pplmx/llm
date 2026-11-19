@@ -496,6 +496,7 @@ def _run_refusal(world_size: int, strategy: str) -> dict:
 
 
 @pytest.mark.quick
+@pytest.mark.need_gpu(2)
 def test_zero_refuses_a_custom_loop_task() -> None:
     """ZeRO Stage-1 v1 drives only the standard loop.
 
@@ -513,6 +514,7 @@ def test_zero_refuses_a_custom_loop_task() -> None:
 
 
 @pytest.mark.quick
+@pytest.mark.need_gpu(2)
 def test_pp_refuses_a_custom_loop_task() -> None:
     """PP's loss contract is the LM-shift + CE one, so a custom loop cannot fit.
 
