@@ -110,13 +110,39 @@ def test_every_description_is_a_plausible_sentence():
         )
 
 
-def test_dev_recipe_warns_about_the_cuda_build():
-    """`just dev` pulls `perf` (flash-attn, sdist-only) — the list must say so.
+def test_the_perf_extra_comes_from_the_astral_gpu_index():
+    """`perf` (flash-attn) must resolve to a pre-built wheel, not an sdist build.
 
-    `--all-extras` includes `perf`, whose `flash-attn` has no prebuilt wheel and
-    compiles against CUDA at install time. Without the warning, a newcomer runs
-    the recipe on a CPU-only box and waits through a build that cannot finish.
+    PyPI ships flash-attn as an sdist only, and compiling it needs `nvcc`, takes
+    many minutes, and fails outright on Python 3.14 + CUDA 13. `pyproject.toml`
+    therefore declares the Astral GPU index, which carries a wheel per CUDA +
+    torch pair. This test pins the declaration, its version floor (the indexes
+    stop at 2.8.3.post1), and the fact that the recipe set exposes a way to sync
+    just that extra.
     """
+    import tomllib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+
+    indexes = pyproject["tool"]["uv"].get("index", [])
+    astral = [i for i in indexes if "wheels.astral.sh" in i.get("url", "")]
+    assert astral, (
+        "pyproject.toml declares no Astral GPU index, so `uv sync --extra perf` "
+        "falls back to building flash-attn from its sdist"
+    )
+
+    perf = pyproject["project"]["optional-dependencies"]["perf"]
+    floors = [req for req in perf if req.startswith("flash-attn")]
+    assert floors, f"the perf extra no longer lists flash-attn: {perf!r}"
+    # The Astral CUDA indexes top out at 2.8.3.post1; a post2 floor cannot be met
+    # by any pre-built wheel and silently reintroduces the source build.
+    assert "post2" not in floors[0], (
+        f"perf requires {floors[0]!r}, but the Astral GPU indexes stop at "
+        "2.8.3.post1 — no pre-built wheel satisfies a post2 floor"
+    )
+
     listed = _listed()
-    desc = listed.get("dev", "")
-    assert "CUDA" in desc, f"`just dev` does not mention the CUDA requirement: {desc!r}"
+    assert "sync-perf" in listed, (
+        "no `sync-perf` recipe, so there is no documented way to install flash-attn without `--all-extras`"
+    )

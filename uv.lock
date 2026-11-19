@@ -1386,13 +1386,18 @@ wheels = [
 
 [[package]]
 name = "flash-attn"
-version = "2.8.3.post2"
-source = { registry = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple" }
+version = "2.8.3.post1+cu.13.0.torch.2.14"
+source = { registry = "https://wheels.astral.sh/simple/cu130/" }
 dependencies = [
     { name = "einops" },
     { name = "torch" },
 ]
-sdist = { url = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/packages/6c/b1/b77625e3d11260d2bd6a4fc249a4be9a3da97ff848e2222e810c4f0e0211/flash_attn-2.8.3.post2.tar.gz", hash = "sha256:d0f9f0b08a986cdeadbffcf5ec8b3a8f514366c68ad1853d3ab061bc83cc340b", size = 8453127, upload-time = "2026-10-14T01:37:12.132Z" }
+wheels = [
+    { url = "https://wheels.astral.sh/artifacts/baf9e4d742bc9799d42a8ae9d7007e00460e127bafec9b7b17e9c7009a6c6046/flash_attn-2.8.3.post1+cu.13.0.torch.2.14-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:baf9e4d742bc9799d42a8ae9d7007e00460e127bafec9b7b17e9c7009a6c6046", size = 242573535, upload-time = "2026-10-03T18:52:39Z" },
+    { url = "https://wheels.astral.sh/artifacts/fc0d1bd753915cfe6dddc4f982b484cef296247b54156b38e770b29d25d2020c/flash_attn-2.8.3.post1+cu.13.0.torch.2.14-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fc0d1bd753915cfe6dddc4f982b484cef296247b54156b38e770b29d25d2020c", size = 242750617, upload-time = "2026-10-03T18:52:43Z" },
+    { url = "https://wheels.astral.sh/artifacts/99e81b29ad0de56cc4f163828c80275d842418f8884db20e7d9e1b7c3faf9041/flash_attn-2.8.3.post1+cu.13.0.torch.2.14-cp315-cp315-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:99e81b29ad0de56cc4f163828c80275d842418f8884db20e7d9e1b7c3faf9041", size = 242575333, upload-time = "2026-10-03T18:52:43Z" },
+    { url = "https://wheels.astral.sh/artifacts/6691515aba539100c21014ce36af2f774257b9925c3b0e1e3fc21de82e616af3/flash_attn-2.8.3.post1+cu.13.0.torch.2.14-cp315-cp315-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:6691515aba539100c21014ce36af2f774257b9925c3b0e1e3fc21de82e616af3", size = 242753541, upload-time = "2026-10-03T18:52:44Z" },
+]
 
 [[package]]
 name = "flatbuffers"
@@ -2215,7 +2220,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'streaming'", specifier = ">=5.1.0" },
     { name = "dvc", marker = "extra == 'dvc'", specifier = ">=3.67.1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.143.0" },
-    { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.8.3.post2" },
+    { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.8.3.post1" },
     { name = "huggingface-hub", marker = "extra == 'compat'", specifier = ">=0.20.0" },
     { name = "lm-eval", marker = "extra == 'eval'", specifier = ">=0.4.12" },
     { name = "nltk", marker = "extra == 'eval'", specifier = ">=3.10.4" },

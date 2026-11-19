@@ -449,28 +449,27 @@ should not be a hard runtime dependency.
 ### Install
 
 ```bash
-# uv
-uv sync --extra perf
-
-# pip
-uv sync --extra perf
-# or, on a CUDA host:
-uv sync --extra perf
+just sync-perf      # shorthand for `uv sync --extra perf`
 ```
 
-`uv.lock` pins `flash-attn` as an sdist, so a plain `uv sync --extra perf`
-compiles it from source on first install — this needs a CUDA toolkit
-(`nvcc`) and can take a long time. On a CUDA host you can instead pull
-pre-built GPU wheels from the
-[Astral GPU indexes](https://wheels.astral.sh/), which publish `flash-attn`
-builds for each supported CUDA + PyTorch combination:
+`pyproject.toml` declares the [Astral GPU index](https://wheels.astral.sh/)
+matching this project's torch build (`cu130`), so `uv sync --extra perf`
+installs a **pre-built** wheel instead of compiling. That matters because PyPI
+ships `flash-attn` as an sdist only — building it needs `nvcc` and can take
+many minutes, and on Python 3.14 / CUDA 13 it fails outright.
+
+The index is version-locked to the torch build, so it must be updated when
+torch's CUDA version changes. To use a wheel for a different CUDA version, pick
+the matching index and add it explicitly:
 
 ```bash
-# Pick the CUDA index that matches your torch build (e.g. cu126 / cu128 /
-# cu130). uv pins flash-attn to this index with `explicit = true`, so no
-# other dependency is affected.
-uv add flash-attn --index astral-cu126=https://wheels.astral.sh/simple/cu126/
+# Indexes exist for each supported CUDA + PyTorch combination
+# (cu126 / cu128 / cu129 / cu130 / cu132).
+uv add flash-attn --index astral-cu128=https://wheels.astral.sh/simple/cu128/
 ```
+
+Mirrors of the Astral indexes exist; substitute the prefix, e.g.
+`https://mirror.sjtu.edu.cn/astral-wheels/cu130/` (same layout).
 
 Astral wheels encode the CUDA + PyTorch pair in the local version tag
 (e.g. `2.8.3.post1+cu.12.6.torch.2.12`). Make sure the wheel you select

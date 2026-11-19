@@ -108,7 +108,12 @@ logging = [
     "tensorboard>=2.21.0",
 ]
 perf = [
-    "flash-attn>=2.8.3.post2",
+    # Floor is 2.8.3.post1, not post2: PyPI carries only sdists for both, so a
+    # wheel must come from the Astral GPU indexes -- and those stop at post1
+    # (verified against https://wheels.astral.sh/simple/cu130/flash-attn/). A
+    # ">=post2" floor therefore cannot be satisfied by any pre-built wheel and
+    # forces a multi-hour CUDA compile from source.
+    "flash-attn>=2.8.3.post1",
 ]
 compat = [
     "huggingface_hub>=0.20.0",
@@ -181,6 +186,16 @@ Source = "https://github.com/pplmx/llm"
 
 [tool.uv]
 default-groups = ["test"]
+
+# Pre-built flash-attn wheels, keyed by CUDA version. PyPI ships flash-attn as an
+# sdist only, so `uv sync --extra perf` without this resolves to a source build
+# (multi-hour CUDA compile, and it fails outright on Python 3.14 / CUDA 13 hosts
+# that the sdist's bundled toolchain does not support). The index URL must follow
+# the torch build: torch 2.14.1+cu130 -> cu130. Mirrors expose the same layout,
+# e.g. https://mirror.sjtu.edu.cn/astral-wheels/cu130/ .
+[[tool.uv.index]]
+name = "astral-cu130"
+url = "https://wheels.astral.sh/simple/cu130/"
 
 # flash-attn's setup.py imports torch at build time but does not declare it
 # in build-system.requires; without this, `uv sync --extra perf` fails in

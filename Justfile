@@ -15,16 +15,21 @@ init: sync
 sync:
     uv sync
 
-# Sync all dependency groups (test, docs, dev) + every runtime extra.
+# Sync every dependency group + all extras.
 #
-# WARNING: `--all-extras` pulls in `perf`, whose `flash-attn` ships as an sdist
-# only — it compiles against CUDA at install time and can take many minutes (or
-# fail on a CPU-only host). For day-to-day work prefer `just sync`, or add the
-# extras you actually need: `uv sync --extra eval --extra logging --extra dvc`
-# (what CI installs). This recipe is for "I want everything, on a GPU box".
-# Sync every dependency group + all extras (needs a CUDA toolchain for `perf`).
+# `--all-extras` includes `perf`, i.e. flash-attn. PyPI ships flash-attn as an
+# sdist only, and compiling it against CUDA takes many minutes (and fails on a
+# CPU-only host), so `pyproject.toml` declares the Astral GPU index, which carries
+# a pre-built wheel matched to the local torch build (torch 2.14.1+cu130 ->
+# cu130). The download is still ~230 MiB, so for day-to-day work prefer
+# `just sync`, or add just the extras you need:
+# `uv sync --extra eval --extra logging --extra dvc` (what CI installs).
 dev:
     uv sync --all-groups --all-extras
+
+# Sync the optional `perf` extra (flash-attn) from the Astral pre-built wheels.
+sync-perf:
+    uv sync --extra perf
 
 # Build wheel
 build:
