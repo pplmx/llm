@@ -412,6 +412,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Enumerated all seven `pattern=`-validated config fields and confirmed every accepted value is usable** (config). Rather than reading the patterns, each was expanded to its literal alternatives and fed back through validation: `tokenizer_type` (2/2 accepted), `parallel_strategy` (6/6), `fsdp_mixed_precision` (3/3), `compile_mode` (4/4), `amp_dtype` (3/3), `scheduler_type` (3/3), and `hash_algo` (fixed last round). Two looked wrong at first and are not: `parallel_strategy='3d'` alone raises "requires explicit, positive dp_size / pp_size / tp_size" and is accepted as soon as those are given (`3d/2/2/2`), which is a conditional field rather than a broken enumeration; and `fsdp_mixed_precision='fp16'` built an FSDP model on CPU, but that path never reaches `_fsdp_mixed_precision` — calling it directly shows fp32→None, bf16→MixedPrecision, fp16→a refusal that names the missing loss scaler and points at bf16/fp32. So my first probe was a false positive, and the documented accepted-then-refused split is intact. **No product defect and no code change.**
 
+
+- **Audited the whole public API surface — `__all__`, entry points, and the top-level exports — all intact** (api). Walked every module under `llm.` with `pkgutil.walk_packages` (**188 modules**) and confirmed each one imports: the `unimportable` list the existing test collects but never asserts is genuinely empty, so no `__all__` check is being silently skipped. Every declared entry point resolves to a real attribute — `llm.models/decoder`, `llm.models/regression_mlp`, `llm.generation_backends/{eager,batched}`, `llm.data_sources/{local,hf}`, `llm.export_backends/{gguf,torchscript}` (8/8, with `llm.peft_methods` intentionally empty and documented as code-registered). `llm.__all__` names `DecoderModel`, `SimpleCharacterTokenizer`, `__version__`, `batch_generate`, `generate`, `stream_generate` and all six exist. **No product defect and no code change.** Worth noting for future rounds: the existing `test_every_module_all_entry_resolves` deliberately tolerates unimportable modules (they are collected into a list and never asserted), which is the right separation of concerns but means an import failure would not show up there — it is empty today, verified directly.
+
+### Added
+
 ### Added
 
 ### Added
