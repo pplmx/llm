@@ -469,6 +469,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Followed last round's "one fact in two places" theme into the constants and found no more instances** (repo hygiene). Checked the obvious duplication sites: `MAX_PROMPT_CHARS`, `MAX_BATCH_PROMPTS`, `PEFT_CHECKPOINT_FORMAT_VERSION`, `DEFAULT_BITS`/`DEFAULT_GRANULARITIES`, `DEFAULT_MAX_OUTPUT_TOKENS` and the chat templates are each defined **once** and referenced from there, and the hardcoded value `256000` appears only in the constant's own definition. The GGUF envelope constants are likewise single-sourced in `export/gguf/spec.py` and — checked against the external reference rather than by eye — match it exactly: `GGUF_VERSION` 3 vs `gguf.GGUF_VERSION` 3, `GGUF_DEFAULT_ALIGNMENT` 32 vs `gguf.GGUF_DEFAULT_ALIGNMENT` 32, and `GGML_K_BLOCK_SIZE` 256 against the official `GGML_QUANT_SIZES[Q4_K] == (256, 144)` (256 values per block). **No product defect and no code change.** The `__version__` duplication fixed last round appears to have been the only such drift in this area.
 
+
+- **Validated every YAML block in the documentation against the real `Config` schema — no defects** (docs). 143 markdown files were scanned. `docs/guides/distributed.md` has the densest concentration (8 blocks), so it was checked three ways: all 8 parse as YAML; every **top-level** key is a real `Config` section (`checkpoint` / `data` / `distributed` / `logging` / `model` / `optimization` / `ppo` / `rlhf` / `training`) with no unknown keys; and every **nested** key under each section exists on that section's model. Across all 143 files, no block misspells a section name. Most blocks are partial snippets showing one section rather than whole configs, which is why they are not loadable through `Config.from_yaml` — that is the intended documentation style, not a defect. **No product defect and no code change.** Worth recording the distinction from the earlier docstring audit: those examples are executable Python and were run; these are configuration fragments, so the meaningful check is "does the schema accept these keys", not "does it load".
+
+### Added
+
 ### Added
 
 ### Added
