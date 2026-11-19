@@ -181,3 +181,52 @@ def test_ci_does_not_grant_write_scopes_it_never_uses():
         f"ci.yml grants write access to {sorted(write_scopes)}, but no job in it needs "
         "to push commits, releases, pages or packages"
     )
+
+
+def test_every_workflow_declares_permissions():
+    """A workflow without a block inherits the repository default."""
+    from pathlib import Path
+
+    import yaml
+
+    workflows_dir = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    missing = [
+        path.name
+        for path in sorted(workflows_dir.glob("*.yml"))
+        if yaml.safe_load(path.read_text(encoding="utf-8")).get("permissions") is None
+    ]
+
+    assert not missing, (
+        "these workflows declare no `permissions:` block and so inherit the repository "
+        f"default (possibly read-write for every scope): {missing}"
+    )
+
+
+def test_the_write_scopes_granted_are_the_expected_minimum_set():
+    """Each workflow's write scopes must match what it actually does.
+
+    Pinning the set stops a future edit from quietly widening one — e.g. giving the
+    CI workflow ``contents: write`` to make some upload work.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    workflows_dir = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+    expected_writes = {
+        "ci.yml": set(),
+        "docs.yml": {"pages", "id-token"},  # deploy to Pages
+        "docker.yml": {"packages"},  # push image tags to GHCR
+        "labeler.yml": {"issues", "pull-requests"},  # apply labels
+        "release.yml": {"contents"},  # publish a GitHub release
+    }
+
+    actual: dict[str, set[str]] = {}
+    for name in expected_writes:
+        permissions = yaml.safe_load((workflows_dir / name).read_text(encoding="utf-8"))["permissions"]
+        actual[name] = {scope for scope, level in permissions.items() if level == "write"}
+
+    assert actual == expected_writes, (
+        "a workflow's granted write scopes changed; update the expectation only if the "
+        f"workflow genuinely needs it.\n  expected: {expected_writes}\n  actual:   {actual}"
+    )

@@ -1,5 +1,11 @@
 name: Labeler
 
+# Least privilege: the action only applies labels to issues and pull requests.
+permissions:
+    contents: read
+    issues: write
+    pull-requests: write
+
 on:
     - pull_request
     - issues

@@ -457,6 +457,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`ci.yml` ran with the repository's default (possibly read-write) token** (ci). Four of the five workflows declared no `permissions:` block; only `docs.yml` narrowed itself (`contents: read` + `pages: write`, which it needs to deploy Pages). The CI jobs only check out the repo, run lint/test/docs-build and upload artefacts — artefact upload uses its own scoped token — so inheriting a default that may grant write across every scope is privilege the workflow never uses. `ci.yml` now declares `contents: read` with the reasoning inline; the workflow still parses with all six jobs and four triggers intact, and its docs job only *builds* mkdocs, so it correctly does **not** need the `pages: write` that `docs.yml` carries. Two tests pin it: the block must exist with `contents: read`, and it must grant **no** write scope. Deleting the block turns the first red. **No product defect**; a security-posture gap. Checked in the same pass: every `actions/checkout` is `v7` and every `setup-uv` is `v10.3.3` across all workflows, so no action-version drift.
 
+
+- **Finished the CI permission sweep: every workflow now declares the minimum it needs** (ci). Last round narrowed `ci.yml` to `contents: read`; the remaining three inherited the repository default. Each was given exactly what its job does: `docker.yml` → `contents: read` + `packages: write` (it logs in to ghcr.io with the built-in token and pushes image tags), `labeler.yml` → `contents: read` + `issues: write` + `pull-requests: write` (it applies labels), `release.yml` → `contents: write` (it publishes a GitHub release). All five workflows parse with their job counts unchanged. Three tests now cover the whole directory: every workflow must declare a block, `ci.yml` must grant no write scope, and each workflow's **write** scopes must equal an explicit expected set — so widening one later (say, giving CI `contents: write` to make an upload work) fails rather than passing unnoticed. Deleting a block turns the first red. **No product defect**; completing a security-posture sweep. Also corrected my own earlier reading: `docs.yml` carries `id-token: write` as well as `pages: write`, which I had missed when describing it.
+
+### Added
+
 ### Added
 
 ### Added

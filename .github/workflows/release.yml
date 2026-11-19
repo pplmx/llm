@@ -1,5 +1,9 @@
 name: Llm Release
 
+# Least privilege: publish a GitHub release from a pushed tag.
+permissions:
+    contents: write
+
 on:
     push:
         tags:

@@ -1,5 +1,11 @@
 name: Build and Push Docker Image
 
+# Least privilege: authenticate to GHCR with the built-in token and push image
+# tags. Nothing in this workflow writes commits or releases.
+permissions:
+    contents: read
+    packages: write
+
 on:
     push:
         tags:
