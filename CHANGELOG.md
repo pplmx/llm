@@ -442,6 +442,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`sym=False` was accepted by both quantization configs and only failed deep in the quantizer** (quantization): asymmetric AWQ and GPTQ are not implemented at all, but `AWQConfig(sym=False)` and `GPTQConfig(sym=False)` constructed fine — the first readable failure was `search_scale`/`quantize`, i.e. **after** the user had loaded a model and run calibration. The layers' own docstrings already claimed otherwise: `AWQQuantizedLinear.forward` documents *"NotImplementedError: If `sym=False` was passed at construction"* while actually raising from `forward`, and the same wording appears in `_gptq_layer` and `_smooth_layer`. Both configs now refuse at construction, in `__post_init__` next to the existing `bits`/`group_size` checks, with a message naming the limitation and the fix. Found by noticing that the coverage config exempts every `raise NotImplementedError` line and asking whether any of those represents an unimplemented feature rather than an abstract interface — these four did. Two tests encoded the old timing (`AWQConfig(sym=False)` then expect the raise from `search_scale`); they are updated to assert the new contract, keeping the same intent, with the reason recorded in their docstrings.
 
+
+- **Audited the remaining coverage `exclude_lines` patterns; one was dead and is removed** (tooling). Following last round's `raise NotImplementedError` finding, the other two questionable entries were checked. `pass` is legitimate: all 41 occurrences are single-statement no-ops in abstract-method stubs and deliberate hook overrides (`load_checkpoint_state`, `prepare_data` on modules with nothing to prepare), and an AST scan confirms **zero** `except ...: pass` handlers in `src/llm`, so nothing is swallowing exceptions. `if self.debug:` was **dead** — no code in `src/llm` has a `debug` attribute at all, so the pattern matched nothing; left in place it would have silently excluded *both* arms of any future `if self.debug:` verbose-logging branch. Removed, with a note in `pyproject.toml` recording why, and coverage re-measured at **85.87%** against the 77% bar. **No product defect**; this is removing a trap rather than fixing a fault.
+
+### Added
+
 ### Added
 
 ### Added

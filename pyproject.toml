@@ -229,9 +229,12 @@ tests = ["tests", "*/llm/tests"]
 # failing. The numbers above are from the marker set in ``Justfile``'s
 # ``test-cov-fast``; re-measure there before moving the bar.
 fail_under = 77
+# NOTE ``if self.debug:`` used to be listed here. No code in ``src/llm`` has a
+# ``debug`` attribute (``grep -rn "self.debug" src/`` is empty), so the pattern
+# matched nothing — and would have silently excluded BOTH arms of any future
+# ``if self.debug:`` verbose-logging branch. Removed rather than left as cargo.
 exclude_lines = [
     "if __name__ == .__main__.:",
-    "if self.debug:",
     "if TYPE_CHECKING:",
     "no cov",
     "raise NotImplementedError",
