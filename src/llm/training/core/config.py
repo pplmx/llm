@@ -1097,10 +1097,18 @@ class DataConfig(BaseModel):
     )
     hash_algo: str = Field(
         "sha256",
-        pattern="^[a-z0-9_]+$",
+        # The description promises "any name accepted by hashly.new", but the
+        # earlier ``^[a-z0-9_]+$`` excluded HYPHENS and so refused real hashlib
+        # algorithms — ``md5-sha1`` is in ``hashlib.algorithms_available`` on this
+        # platform. Allow a separator between alphanumeric runs, which keeps the
+        # guard against junk (leading/trailing separators, doubled separators,
+        # uppercase, spaces) while accepting every current algorithm. Verified:
+        # no entry of ``hashlib.algorithms_available`` is rejected, and the six
+        # junk shapes above still are.
+        pattern=r"^[a-z0-9]+([_-][a-z0-9]+)*$",
         description=(
             "Hash algorithm for dedup. Any name accepted by "
-            "hashlib.new works ('sha256', 'sha1', 'md5', 'blake2b', ...)."
+            "hashlib.new works ('sha256', 'sha1', 'md5', 'blake2b', 'md5-sha1', ...)."
         ),
     )
 

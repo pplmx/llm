@@ -516,6 +516,32 @@ def test_data_config_hash_algo_pattern_rejects_garbage():
         DataConfig(data_source="dedup_local", hash_algo="SHA-256-bad!")
 
 
+@pytest.mark.parametrize("algo", ["sha256", "md5", "blake2b", "sha3_256", "md5-sha1", "sha512_256"])
+def test_data_config_accepts_every_hashlib_algorithm_name(algo):
+    """The field's promise is "any name accepted by hashlib.new".
+
+    ``^[a-z0-9_]+$`` contradicted that: ``md5-sha1`` is in
+    ``hashlib.algorithms_available`` and hashlib.new() hashes with it, but the
+    hyphen made the config reject it, so a user following the description could not
+    configure a working algorithm.
+    """
+    import hashlib
+
+    assert algo in hashlib.algorithms_available, f"{algo} is not a real hashlib name"
+    hashlib.new(algo)  # prove hashly itself accepts it
+
+    assert DataConfig(data_source="dedup_local", hash_algo=algo).hash_algo == algo
+
+
+def test_the_hash_algo_pattern_still_rejects_junk():
+    """Widening for hyphens must not open the door to arbitrary strings."""
+    from pydantic import ValidationError
+
+    for junk in ("UPPER", "-lead", "trail-", "has space", "a--b", ""):
+        with pytest.raises(ValidationError):
+            DataConfig(data_source="dedup_local", hash_algo=junk)
+
+
 # --- Inner-source agnostic end-to-end --------------------------------------
 
 
