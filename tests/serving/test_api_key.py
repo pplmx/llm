@@ -511,3 +511,39 @@ def test_dockerfile_build_and_run_paths_agree():
 
     # And the venv must come from the stage that installed it.
     assert "COPY --from=builder /app/.venv /app/.venv" in text
+
+
+# --- compose.yml must preserve the fail-closed contract --------------------
+#
+# The image defaults ``LLM_SERVING_HOST=0.0.0.0`` and its lifespan guard refuses to
+# start without an api_key, so a compose file that let the key default to empty
+# would produce a container that starts and then dies a few seconds later with a
+# confusing error. compose.yml uses ``${VAR:?message}``, which makes `docker
+# compose` itself abort at PARSE time with an actionable message. That is a
+# deliberate difference from an ordinary ``${VAR:-}`` default and is easy to
+# "simplify" away.
+
+
+def _compose() -> dict:
+    from pathlib import Path
+
+    import yaml
+
+    return yaml.safe_load((Path(__file__).resolve().parents[2] / "compose.yml").read_text(encoding="utf-8"))
+
+
+def test_compose_requires_the_api_key_at_parse_time():
+    """``:?`` (not ``:-``) so an unset key aborts before the container starts."""
+    environment = _compose()["services"]["llm"]["environment"]
+
+    key = environment["LLM_SERVING_API_KEY"]
+    assert ":?" in key, (
+        "LLM_SERVING_API_KEY must use ${VAR:?...} so `docker compose` aborts at parse "
+        f"time; a default would let the container start and die. Got: {key!r}"
+    )
+
+
+def test_compose_binds_the_same_host_the_guard_validates():
+    """Compose must pass 0.0.0.0, matching the image's ENV default."""
+    # Comparing the configured value, not binding a socket.
+    assert _compose()["services"]["llm"]["environment"]["LLM_SERVING_HOST"] == "0.0.0.0"  # noqa: S104
