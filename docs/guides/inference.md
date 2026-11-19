@@ -479,15 +479,41 @@ flash_attn ... no module named` at runtime. If no pre-built wheel matches
 your exact environment (e.g. a very new `torch`/Python combo), fall back to
 the source build above or `uv sync --extra perf` on a CUDA host.
 
-> **torch 2.13 / Python 3.14 note**: as of this writing the Astral indexes
-> only publish `flash-attn` wheels up to `torch 2.12`, so on `torch 2.13` +
-> Python 3.14 you must build from source. The build requires an `nvcc`
-> whose major.minor matches `torch.version.cuda` (e.g. CUDA 13.x for
-> `torch 2.13.0+cu130`) — torch's `cpp_extension` refuses a mismatched
-> compiler even though CUDA runtime is forward-compatible. Do **not** use
-> `FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE` (the default in this repo's
-> `[tool.uv.extra-build-variables]`): it produces an importable package
-> with no kernels and every flash test fails deep in `forward`.
+> **`pip install llm[perf]` does not get a wheel.** The index in `pyproject.toml`
+> is a uv setting and ships no index information inside the built wheel, so a
+> resolver that only sees PyPI picks the sdist and compiles. Two further traps,
+> both measured:
+>
+> 1. The Astral wheels declare a **pin on the matching torch**, e.g.
+>    `flash_attn-2.8.3.post1+cu.13.0.torch.2.14` requires `torch==2.14.*`. Let
+>    PyPI choose torch freely and it resolves a different release (2.13.0 here),
+>    so no wheel matches and you silently fall back to the sdist.
+> 2. uv considers only the **first** index that carries a package (dependency
+>    confusion protection), so listing PyPI first hides the wheels entirely.
+>
+> The repository avoids both by resolving once with `uv lock`, which records the
+> wheel URL and its sha256 in `uv.lock`; `uv sync --extra perf` then reinstalls
+> exactly that wheel. If you are outside the repository, the practical rule is to
+> install torch the way you normally do for your CUDA build, then ask for the
+> flash-attn wheel whose local tag matches it:
+>
+> ```bash
+> uv pip install 'flash-attn==2.8.3.post1+cu.13.0.torch.2.14' \
+>     --index-url https://wheels.astral.sh/simple/cu130/ \
+>     --index-strategy unsafe-best-match
+> ```
+>
+> Always confirm a wheel was chosen: the resolver must name a `.whl`, never a
+> `.tar.gz`.
+
+**Source build fallback**: if no wheel matches your exact CUDA + torch + Python
+triple, the sdist compiles — and that requires an `nvcc` whose major.minor
+matches `torch.version.cuda` (e.g. CUDA 13.x for `torch 2.14.1+cu130`); torch's
+`cpp_extension` refuses a mismatched compiler even though the CUDA runtime is
+forward-compatible. Do **not** use `FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE` (the
+default in this repo's `[tool.uv.extra-build-variables]`): it produces an
+importable package with no kernels, and every flash test then fails deep inside
+`forward` instead of at import.
 
 ### Configuration
 
