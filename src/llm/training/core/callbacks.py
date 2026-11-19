@@ -397,6 +397,19 @@ class EvaluationCallback(Callback):
 
     def __init__(self, eval_runner, eval_interval: int = 1000):
         super().__init__()
+        # ``on_train_step_end`` computes ``global_step % self.eval_interval``, so a
+        # zero interval is a division by zero the moment a step is recorded. The
+        # only current caller (``build_periodic_eval_callback``) already returns
+        # ``None`` for a falsy interval, which makes this unreachable today — but
+        # that guard lives in a DIFFERENT module, so any future construction site
+        # would reintroduce a crash whose traceback points here, not at the caller
+        # that passed 0. Refuse it at the boundary instead.
+        if eval_interval < 1:
+            raise ValueError(
+                f"eval_interval must be >= 1, got {eval_interval}: the callback computes "
+                "`global_step % eval_interval`. Use eval_interval=0 at the CONFIG level "
+                "to disable periodic evaluation; that path never builds this callback."
+            )
         self.eval_runner = eval_runner
         self.eval_interval = eval_interval
         # The optimizer step whose eval already ran — under gradient
