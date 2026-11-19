@@ -57,7 +57,16 @@ from llm.training.distributed import (
 from llm.training.tasks.sft_task import SFTTask
 from tests.support.devices import all_gpu_devices
 
+# A card is only usable when most of it is free. An absolute floor is not enough:
+# a 79 GiB card with 76 GiB held by another job still shows ~2.6 GiB free, passes a
+# 1 GiB floor, and then blocks inside NCCL because the neighbour keeps the device
+# busy -- measured on this host, where
+# test_tp_checkpoint_roundtrip_four_gpu_deep_tp timed out at 480 s when it picked
+# such a card and passed in 10 s on a genuinely idle one. This roundtrip moves a
+# whole model shard per rank, so it wants tens of GiB, not a couple.
 ROUNDTRIP_MIN_FREE_BYTES = 1 * 1024**3
+#: Fraction of total VRAM that must be free for a card to count as idle.
+ROUNDTRIP_MIN_FREE_FRACTION = 0.75
 ROUNDTRIP_JOIN_TIMEOUT_S = 480
 # Bounded per-collective timeout for the spawn workers' hand-rolled process
 # groups (they call ``init_process_group`` directly rather than going through
@@ -73,6 +82,28 @@ ROUNDTRIP_JOIN_TIMEOUT_S = 480
 # above a cold ``mp.spawn`` + ``import torch`` on a loaded host while staying
 # under the parent join so the guard still speaks first.
 PG_COLLECTIVE_TIMEOUT_S = timedelta(seconds=300)
+
+
+def _idle_gpu_devices(count: int) -> list:
+    """Return up to ``count`` genuinely idle GPUs, or skip the test.
+
+    Combines the free-bytes floor with a free-fraction test; see
+    ``ROUNDTRIP_MIN_FREE_FRACTION`` for why the floor alone is insufficient.
+    """
+    candidates = all_gpu_devices(min_free_bytes=ROUNDTRIP_MIN_FREE_BYTES)
+    idle = [
+        device
+        for device in candidates
+        if (lambda free, total: total and free / total >= ROUNDTRIP_MIN_FREE_FRACTION)(*torch.cuda.mem_get_info(device))
+    ]
+    if len(idle) < count:
+        pytest.skip(
+            f"need {count} idle GPUs with >= {ROUNDTRIP_MIN_FREE_FRACTION:.0%} of VRAM free; "
+            f"found {len(idle)} (free VRAM: "
+            + ", ".join(f"cuda:{d.index}={torch.cuda.mem_get_info(d)[0] / 2**30:.1f}GiB" for d in candidates)
+            + ")"
+        )
+    return idle[:count]
 
 
 def _release_parent_cuda_caches() -> None:
@@ -237,9 +268,9 @@ def _roundtrip_worker(rank: int, world_size: int, ctx: dict, results) -> None:
 
 
 def _run_roundtrip(tmp_path: Path, world_size: int) -> None:
-    gpu_devices = all_gpu_devices(min_free_bytes=ROUNDTRIP_MIN_FREE_BYTES)
-    if len(gpu_devices) < world_size:
-        pytest.skip(f"need at least {world_size} free GPUs (TP checkpoint roundtrip)")
+    # Guard only: the spawn workers pick their own cards. Skip here rather than
+    # letting a busy host fail inside a collective.
+    _idle_gpu_devices(world_size)
     _release_parent_cuda_caches()
     # Parent-owned store keeps the port bound for the whole spawn (see
     # tests/support/distributed.py).
@@ -432,9 +463,7 @@ def _set_master_env(port: int) -> None:
 
 
 def _run_engine_checkpoint(tmp_path: Path, world_size: int, tp_size: int) -> None:
-    gpu_devices = all_gpu_devices(min_free_bytes=ROUNDTRIP_MIN_FREE_BYTES)
-    if len(gpu_devices) < world_size:
-        pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D engine checkpoint)")
+    gpu_devices = _idle_gpu_devices(world_size)
     device_indices = [device.index for device in gpu_devices[:world_size]]
     _release_parent_cuda_caches()
 
@@ -555,9 +584,7 @@ def _engine_resume_stage_two_worker(rank: int, world_size: int, device_indices: 
 
 
 def _run_engine_resume_roundtrip(tmp_path: Path, world_size: int, tp_size: int) -> None:
-    gpu_devices = all_gpu_devices(min_free_bytes=ROUNDTRIP_MIN_FREE_BYTES)
-    if len(gpu_devices) < world_size:
-        pytest.skip(f"need at least {world_size} free GPUs (TP+DP 2D engine resume)")
+    gpu_devices = _idle_gpu_devices(world_size)
     device_indices = [device.index for device in gpu_devices[:world_size]]
 
     ctx: dict = {"tp_size": tp_size, "ckpt_dir": str(tmp_path / "ckpts")}

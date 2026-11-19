@@ -133,6 +133,44 @@ check:
 docs:
     uv run --frozen --group docs mkdocs build --strict
 
+# CI has no GPU runner, so the GPU suite only ever runs on a host like this one.
+# That makes it the one gate no automation will catch for you -- run this before
+# pushing. Deliberately NOT a git hook: it takes ~8 minutes on 8 GPUs, and a hook
+# that slow gets bypassed with `--no-verify`, which is worse than no hook.
+#
+# Refuses to report success without a GPU: `test-gpu` on a GPU-less host skips
+# every test and exits 0, so it would print a green line for work it never did.
+# Run every gate a push should satisfy, GPU suite included (needs a GPU host).
+preflight:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! uv run --frozen python -c 'import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)' 2>/dev/null; then
+        echo "preflight needs a GPU host: torch.cuda.is_available() is False." >&2
+        echo "The GPU suite would skip everything and report success; run the" >&2
+        echo "CPU-only gates on a CPU host instead: just check && just docs && just test-fast" >&2
+        exit 1
+    fi
+    # Do NOT pin CUDA_VISIBLE_DEVICES: the GPU tests call
+    # tests/support/devices.all_gpu_devices(), which filters by free VRAM and
+    # raises MIN_FREE_VRAM_BYTES so they pick idle cards themselves. Forcing all
+    # eight visible makes a busy card fail a test that passes on a free one --
+    # measured: test_tp_checkpoint_roundtrip_four_gpu_deep_tp timed out at 480 s on
+    # a card with 78 GiB used by another job, and passed in 10 s once it chose.
+    uv run --frozen python -c 'import torch; print(f">>> {torch.cuda.device_count()} GPU(s) visible; free-VRAM filtering is per-test")'
+    echo ">>> 1/6 check (lock, ruff, ty, examples)"
+    just check
+    echo ">>> 2/6 docs"
+    just docs
+    echo ">>> 3/6 test-fast"
+    just test-fast
+    echo ">>> 4/6 test-gpu"
+    just test-gpu
+    echo ">>> 5/6 test-heavy"
+    just test-heavy
+    echo ">>> 6/6 test-e2e"
+    just test-e2e
+    echo ">>> preflight passed"
+
 # Build image
 image:
     docker image build -t {{APP_NAME}} .
