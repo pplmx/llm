@@ -198,6 +198,16 @@ def _run(checkpoint_dir: Path, *, resume: bool, backend: str = "gloo") -> dict:
     out = {k: dict(v) if isinstance(v, dict) else v for k, v in dict(results).items()}
     for rank, payload in out.items():
         assert payload.get("error") is None, f"rank {rank}: {payload.get('error')}"
+    # A worker killed before it can reach its ``except`` block (OOM, segfault in
+    # native code, import failure) writes nothing, so ``out`` simply lacks that
+    # rank. Every caller iterates ``out.items()``, so a missing rank would make
+    # part of the assertion silently not run. Same guard as
+    # ``test_zero_optimizer._run_spawn``.
+    assert len(out) == WORLD_SIZE, (
+        f"only {len(out)} of {WORLD_SIZE} ranks reported results "
+        f"(missing {sorted(set(range(WORLD_SIZE)) - set(out))}); "
+        "a worker died before its except block could record an error"
+    )
     return out
 
 

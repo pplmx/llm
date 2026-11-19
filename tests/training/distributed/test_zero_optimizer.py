@@ -133,6 +133,17 @@ def _run_spawn(worker, world_size: int) -> dict:
     if any(v.get("error") for v in out.values()):
         first = next(v["error"] for v in out.values() if v.get("error"))
         raise AssertionError(f"ZeroOptimizer worker failed: {first}")
+    # A worker can die WITHOUT reaching its ``except`` block — OOM-killed, a
+    # segfault in native code, or a failure during import — so nothing is written
+    # to ``results``. Every caller then does ``for rank, payload in out.items()``,
+    # whose body would never run, and the test would pass while doing nothing.
+    # Require one payload per rank so a silent total crash cannot look green.
+    if len(out) != world_size:
+        missing = sorted(set(range(world_size)) - set(out))
+        raise AssertionError(
+            f"only {len(out)} of {world_size} ranks reported results (missing {missing}); "
+            "a worker died before its except block could record an error"
+        )
     return out
 
 
