@@ -409,6 +409,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`data.hash_algo` rejected hashlib algorithms its own description promised to accept** (data): the field said *"Any name accepted by `hashlib.new` works"* but validated with `^[a-z0-9_]+$`, which excludes hyphens. Measured against the platform: `md5-sha1` **is** in `hashlib.algorithms_available` and `hashlib.new("md5-sha1")` hashes with it, yet `DataConfig(hash_algo="md5-sha1")` raised `ValidationError` — a user following the description could not configure a working algorithm. The pattern is now `^[a-z0-9]+([_-][a-z0-9]+)*$`, which accepts every entry of `hashlib.algorithms_available` (verified: none rejected) while still refusing `UPPER`, `-lead`, `trail-`, `has space`, `a--b` and the empty string. Tests cover both directions — all six accepted algorithm names, including the hyphenated one, and the six junk shapes — and reverting the pattern turns only `md5-sha1` red. **A real but narrow defect**: not worth encoding more narrowly in order to catch it.
 
+
+- **Enumerated all seven `pattern=`-validated config fields and confirmed every accepted value is usable** (config). Rather than reading the patterns, each was expanded to its literal alternatives and fed back through validation: `tokenizer_type` (2/2 accepted), `parallel_strategy` (6/6), `fsdp_mixed_precision` (3/3), `compile_mode` (4/4), `amp_dtype` (3/3), `scheduler_type` (3/3), and `hash_algo` (fixed last round). Two looked wrong at first and are not: `parallel_strategy='3d'` alone raises "requires explicit, positive dp_size / pp_size / tp_size" and is accepted as soon as those are given (`3d/2/2/2`), which is a conditional field rather than a broken enumeration; and `fsdp_mixed_precision='fp16'` built an FSDP model on CPU, but that path never reaches `_fsdp_mixed_precision` — calling it directly shows fp32→None, bf16→MixedPrecision, fp16→a refusal that names the missing loss scaler and points at bf16/fp32. So my first probe was a false positive, and the documented accepted-then-refused split is intact. **No product defect and no code change.**
+
+### Added
+
 ### Added
 
 ### Added
