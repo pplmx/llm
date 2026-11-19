@@ -466,6 +466,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`llm.__version__` is hardcoded and nothing compared it with the release version** (packaging). `src/llm/__init__.py` sets `__version__ = "0.0.5"` by hand while the release version lives in `pyproject.toml` — two hand-maintained copies of one fact. Changing only `pyproject.toml` during a release would leave `llm --version` and `llm.__version__` reporting the previous release. Measured: setting the constant to `"9.9.9"` left **all 15** version-related tests green, so nothing would have noticed. Two tests now assert the constant equals both the installed distribution metadata and `pyproject.toml` read directly; the mutation is caught by both, the first naming the hardcoded-copy hazard. **No product defect** — the two values agree at 0.0.5 today, and the CLI's `llm --version` was verified end to end in an earlier round; this closes the drift path.
 
+
+- **Followed last round's "one fact in two places" theme into the constants and found no more instances** (repo hygiene). Checked the obvious duplication sites: `MAX_PROMPT_CHARS`, `MAX_BATCH_PROMPTS`, `PEFT_CHECKPOINT_FORMAT_VERSION`, `DEFAULT_BITS`/`DEFAULT_GRANULARITIES`, `DEFAULT_MAX_OUTPUT_TOKENS` and the chat templates are each defined **once** and referenced from there, and the hardcoded value `256000` appears only in the constant's own definition. The GGUF envelope constants are likewise single-sourced in `export/gguf/spec.py` and — checked against the external reference rather than by eye — match it exactly: `GGUF_VERSION` 3 vs `gguf.GGUF_VERSION` 3, `GGUF_DEFAULT_ALIGNMENT` 32 vs `gguf.GGUF_DEFAULT_ALIGNMENT` 32, and `GGML_K_BLOCK_SIZE` 256 against the official `GGML_QUANT_SIZES[Q4_K] == (256, 144)` (256 values per block). **No product defect and no code change.** The `__version__` duplication fixed last round appears to have been the only such drift in this area.
+
+### Added
+
 ### Added
 
 ### Added
