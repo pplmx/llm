@@ -479,32 +479,25 @@ flash_attn ... no module named` at runtime. If no pre-built wheel matches
 your exact environment (e.g. a very new `torch`/Python combo), fall back to
 the source build above or `uv sync --extra perf` on a CUDA host.
 
-> **`pip install llm[perf]` does not get a wheel.** The index in `pyproject.toml`
-> is a uv setting and ships no index information inside the built wheel, so a
-> resolver that only sees PyPI picks the sdist and compiles. Two further traps,
-> both measured:
->
-> 1. The Astral wheels declare a **pin on the matching torch**, e.g.
->    `flash_attn-2.8.3.post1+cu.13.0.torch.2.14` requires `torch==2.14.*`. Let
->    PyPI choose torch freely and it resolves a different release (2.13.0 here),
->    so no wheel matches and you silently fall back to the sdist.
-> 2. uv considers only the **first** index that carries a package (dependency
->    confusion protection), so listing PyPI first hides the wheels entirely.
->
-> The repository avoids both by resolving once with `uv lock`, which records the
-> wheel URL and its sha256 in `uv.lock`; `uv sync --extra perf` then reinstalls
-> exactly that wheel. If you are outside the repository, the practical rule is to
-> install torch the way you normally do for your CUDA build, then ask for the
-> flash-attn wheel whose local tag matches it:
->
-> ```bash
-> uv pip install 'flash-attn==2.8.3.post1+cu.13.0.torch.2.14' \
->     --index-url https://wheels.astral.sh/simple/cu130/ \
->     --index-strategy unsafe-best-match
-> ```
->
-> Always confirm a wheel was chosen: the resolver must name a `.whl`, never a
-> `.tar.gz`.
+`pyproject.toml` binds flash-attn to that index in two places that must stay
+together: `[[tool.uv.index]]` declares the index, and `[tool.uv.sources]` routes
+`flash-attn` to it. The second half matters — uv's dependency-confusion
+protection means a package found on an earlier index is never looked for on a
+later one, so without the source pin PyPI's sdist would win. Both were produced
+by `uv add --optional perf flash-attn --index astral-cu130=…`; adding a
+dependency by hand tends to drop `[tool.uv.sources]`.
+
+`uv.lock` then records the chosen wheel's URL and sha256, so `uv sync --extra
+perf` reinstalls exactly that artefact with no resolver work.
+
+Adding a wheel for a different CUDA build is the same command with a different
+index; change the CUDA part to match `torch.version.cuda`, and keep the two
+halves together:
+
+```bash
+uv add --optional perf flash-attn \
+    --index astral-cu128=https://wheels.astral.sh/simple/cu128/
+```
 
 **Source build fallback**: if no wheel matches your exact CUDA + torch + Python
 triple, the sdist compiles — and that requires an `nvcc` whose major.minor

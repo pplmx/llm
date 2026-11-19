@@ -2220,7 +2220,7 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'streaming'", specifier = ">=5.1.0" },
     { name = "dvc", marker = "extra == 'dvc'", specifier = ">=3.67.1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.143.0" },
-    { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.8.3.post1" },
+    { name = "flash-attn", marker = "extra == 'perf'", specifier = ">=2.8.3.post1", index = "https://wheels.astral.sh/simple/cu130/" },
     { name = "huggingface-hub", marker = "extra == 'compat'", specifier = ">=0.20.0" },
     { name = "lm-eval", marker = "extra == 'eval'", specifier = ">=0.4.12" },
     { name = "nltk", marker = "extra == 'eval'", specifier = ">=3.10.4" },

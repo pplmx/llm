@@ -197,6 +197,14 @@ default-groups = ["test"]
 name = "astral-cu130"
 url = "https://wheels.astral.sh/simple/cu130/"
 
+# Pin flash-attn (and only flash-attn) to that index. Without this, uv consults the
+# default index first for every package, and its dependency-confusion protection
+# means a package found there is never looked for elsewhere -- so PyPI's sdist
+# would win. `uv add --optional perf flash-attn --index astral-cu130=...` writes
+# exactly this block pair; keep them together.
+[tool.uv.sources]
+flash-attn = { index = "astral-cu130" }
+
 # flash-attn's setup.py imports torch at build time but does not declare it
 # in build-system.requires; without this, `uv sync --extra perf` fails in
 # build isolation with ModuleNotFoundError: No module named 'torch'.

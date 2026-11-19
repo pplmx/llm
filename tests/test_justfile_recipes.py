@@ -132,6 +132,18 @@ def test_the_perf_extra_comes_from_the_astral_gpu_index():
         "falls back to building flash-attn from its sdist"
     )
 
+    # Declaring the index is not enough: uv's dependency-confusion protection stops
+    # at the first index that carries a package, so PyPI's sdist would still win.
+    # `[tool.uv.sources]` is what routes flash-attn to the Astral index, and it is
+    # the half that hand-editing drops (`uv add --optional perf flash-attn
+    # --index ...` writes both).
+    sources = pyproject["tool"]["uv"].get("sources", {})
+    assert sources.get("flash-attn", {}).get("index") == astral[0]["name"], (
+        "pyproject.toml declares the Astral index but does not route flash-attn to "
+        f"it via [tool.uv.sources] (found {sources.get('flash-attn')!r}); PyPI's "
+        "sdist would win and the CUDA source build returns"
+    )
+
     perf = pyproject["project"]["optional-dependencies"]["perf"]
     floors = [req for req in perf if req.startswith("flash-attn")]
     assert floors, f"the perf extra no longer lists flash-attn: {perf!r}"
