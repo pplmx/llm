@@ -22,7 +22,12 @@ exclude = [
 ]
 
 [rules]
-invalid-mutable-override = "ignore"
-# ty 0.0.87+ flags overriding torch nn.Module.forward (typed Callable[..., Any]) as
-# invalid-mutable-override; this is the standard, correct PyTorch subclassing
-# pattern (45 sites across src/llm). Suppress the rule rather than annotate every forward.
+incompatible-mutable-override = "ignore"
+# ty flags overriding torch nn.Module.forward (typed Callable[..., Any]) as an
+# incompatible mutable override; this is the standard, correct PyTorch subclassing
+# pattern (45 sites across src/llm). Suppress the rule rather than annotate every
+# forward.
+#
+# Renamed from `invalid-mutable-override` in ty 0.0.88..0.0.107; the old spelling is
+# now a hard error ("Rule has been renamed"), not a silent no-op, so this file has
+# to track ty's renames when the pin moves.

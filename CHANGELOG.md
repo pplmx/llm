@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (None pending from the previously-listed items — both are now implemented and
   covered by the entries below and their regression suites.)
 
+
+- **Upgraded 91 dependencies to their latest releases and verified every gate** (deps). `uv lock --upgrade` against pypi.org moved the whole tree; the notable ones are `transformers` 5.19.0 → **5.23.0**, `openai` 3.30.0 → **3.57.0**, `fastapi` 0.143.0 → **0.165.0**, `starlette` 1.8.0 → **1.10.0**, `pydantic` 2.14.1 → **2.14.4**, `datasets` 5.1.0 → **5.2.0**, `hf`/`huggingface-hub` 2.2.0 → **2.4.0**, `onnxruntime` 1.31.0 → **1.32.0**, `pandas` 3.0.6 → **3.1.1**, `pytest` 9.1.1 → **9.2.0**, `ruff` 0.17.0 → **0.17.6** and `ty` 0.0.87 → **0.0.107**. Two **major** jumps (`pymdown-extensions` 12 → 13, `watchdog` 6 → 7) are both confined to the mkdocs chain and do not touch runtime. The tool upgrades surfaced two real follow-ups rather than silent breakage: `ty` **renamed** `invalid-mutable-override` → `incompatible-mutable-override`, and the old spelling is now a hard error, so `ty.toml` is updated (with a note that the file must track ty's renames); and the pre-commit hook pins for ruff/ty had to move to `v0.17.6`/`v0.0.107`, which the version-drift test written earlier caught immediately instead of letting hook and lock disagree. All gates were then run on the upgraded tree: `check`, `docs`, `test-fast` (**4852 passed / 6 skipped**, identical to before the upgrade), `test-gpu` (**38 passed**), `test-heavy` (**89 passed**), `test-e2e` (**59 passed**). The `llm` CLI still starts and `--version` still reports `0.0.5` under typer 0.28.0.
+
+### Changed
+
 ### Changed
 
 - **Test architecture — runtime + GPU-less strategy**:
