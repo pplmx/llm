@@ -32,7 +32,7 @@ jobs:
                 uses: actions/checkout@v7
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
@@ -94,7 +94,7 @@ jobs:
             -   name: Checkout repository
                 uses: actions/checkout@v7
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
@@ -126,7 +126,7 @@ jobs:
                 uses: actions/checkout@v7
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
@@ -239,7 +239,7 @@ jobs:
                 uses: actions/checkout@v7
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
@@ -285,7 +285,7 @@ jobs:
                 uses: actions/checkout@v7
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
@@ -337,7 +337,7 @@ jobs:
                 uses: actions/checkout@v7
 
             -   name: Set up UV Environment
-                uses: astral-sh/setup-uv@v10.3.3
+                uses: astral-sh/setup-uv@v10.4.0
                 with:
                     # Pin the interpreter: ``requires-python = ">=3.14"`` would
                     # otherwise let `uv` pick whatever 3.14+ it prefers on the
