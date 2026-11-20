@@ -308,15 +308,39 @@
 - [x] 集成 Flash Attention 2 (`FlashAttention` wrapper + `llm[perf]` 可选依赖 + `ATTENTION_REGISTRY` 注册)
 - [x] 在 MHA 和 GQA 中启用 Flash Attention (GQA/MQA 经 `num_kv_heads` 支持；与 MHA 同一套
       projection/KV-cache 接口，`tests/training/distributed/test_tensor_parallel.py` 覆盖 TP 下的
-      flash 前向/梯度 parity)
-- [ ] 性能基准测试和优化 (`scripts/benchmark_inference.py` 的 `--attn-impl` **可重复传入**，一次运行
+
+  ```text
+  flash 前向/梯度 parity)
+  ```
+
+- [x] 推理基准对比工具 (`scripts/benchmark_inference.py`：`--attn-impl` **可重复传入**，一次运行
       即在同一 prompt / token 预算下测量多个实现并打印对比表：逐实现延迟、tok/s、相对瓶颈项的
-      speedup 与延迟比，不可用的后端（如未安装的 `flash_attn`）记为 SKIPPED 而不中断整轮对比；
-      实测小模型下 `mha` 569-585 tokens/s vs `mla` 416-460 tokens/s。仍缺
-      `flash_attn` 一路——本机装不了（`FLASH_ATTN_AVAILABLE is False`），三路对比需要在有 CUDA
-      工具链的主机上建包后补完。延迟分位数**已补齐**（P50/P95/P99 + 最慢一轮的 TPS，使用
-      nearest-rank 保证报告值是实际观测到的延迟；`statistics.quantiles` 会插值出超出样本范围的
-      数字，实测 `[1.0…1.8, 10.0]` 给出 p95=13.69/p99=17.30，最大值只有 10.0）
+
+  ```text
+  speedup 与延迟比，不可用的后端记为 SKIPPED 而不中断整轮对比。延迟分位数使用 nearest-rank，
+  保证报告值是实际观测到的延迟（`statistics.quantiles` 会插值出超出样本范围的数字，实测
+  `[1.0…1.8, 10.0]` 给出 p95=13.69/p99=17.30，最大值只有 10.0）。
+  **三路对比已跑通**：`flash_attn` 此前因 PyPI 只发 sdist、本机编译失败而缺席，改用 Astral GPU
+  索引（`pyproject.toml` 的 `[[tool.uv.index]]`，见 [inference guide](docs/guides/inference.md)）
+  装到预构建 wheel 后 `FLASH_ATTN_AVAILABLE is True`。A100 实测（小模型，50 tokens，3 轮平均）：
+  ```
+
+  ```text
+  | impl | avg latency | avg tok/s | speedup |
+  | --- | --- | --- | --- |
+  | `mha` | 0.0481s | 499.10 | 1.00x |
+  | `mla` | 0.0740s | 417.75 | 0.84x |
+  | `flash_attn` | **0.0292s** | 485.41 | 0.97x |
+  ```
+
+  ```text
+  `flash_attn` 延迟最低（0.61x 于 baseline）但 tok/s 略低，说明这个规模下瓶颈不在注意力算子本身；
+  要得出长上下文下的结论需要更大的模型与更长的序列。仍待补的是**跨规模/跨上下文的吞吐曲线**，
+  以及把这些数字固定成回归门槛（避免性能悄悄退化）。
+  ```
+
+- [ ] 建立性能回归门槛（需要一个稳定、独占的 GPU 环境；当前机器常有其他任务占用显存，
+      同一测试的耗时波动可达数倍，不足以作为门禁）
 
 #### 10.2 高级推理优化
 
@@ -475,15 +499,22 @@
   补偿，重建误差显著低于 naive RTN (约 2.5x)；可选 `clip_ratio` 抑制 outlier；`LayerQuantPolicy` 复用支持 per-layer 混合精度；42 新 tests 全绿；零回归对 GPTQ / simple-PTQ；ADR-009；跨层 folding 与 SmoothQuant / GGUF 留待后续切片
 - [x] **集成 SmoothQuant** (Xiao et al., ICML 2023): `src/llm/quantization/smooth.py` (算法 + 双入口) + `_smooth_layer.py` (int8 权重 per-row scale + 每张量激活 fake-quant + `input_scales` 平滑补偿)；平滑因子 `s = act_max^α
       / w_max^(1−α)`，默认 α=0.5，可选 per-layer α 网格搜索；非搜索路径只累积 per-channel max-abs 激活 (O(in_f) 内存，per-tensor 激活 scale 有闭式解)；`LayerQuantPolicy` 复用 + `__post_init__` fail-fast；39 新 tests 全绿 (outlier
-      激活下重建误差比无平滑低约一个数量级)；零回归对 GPTQ / AWQ / simple-PTQ；ADR-010；跨层 folding / INT8 GEMM kernel / 非对称留待后续切片
+
+  ```text
+  激活下重建误差比无平滑低约一个数量级)；零回归对 GPTQ / AWQ / simple-PTQ；ADR-010；跨层 folding / INT8 GEMM kernel / 非对称留待后续切片
+  ```
+
 - [x] **GGUF 格式支持** (ADR-011): `src/llm/export/gguf/` 分层实现 GGUF v3 容器
       (`spec.py` 格式常量/枚举/header/tensor-info + `metadata.py` 类型化 KV +
-      `reader.py` / `writer.py`，32 字节对齐、dims 逆序、原子写入) 与 Q4_0/Q8_0
-      块量化 (`quant.py`，镜像 ggml 参考数学，字节级兼容 llama.cpp)；以
-      `llm.export_backends` entry point 接入 `EXPORT_REGISTRY`，`export_model("gguf", ...)`
-      可用；默认 F16，`quantize="q4_0"/"q8_0"` 量化 ndim≥2 且末维为 32 倍数的权重；
-      116 新 tests 全绿 (format/quant/round-trip/corrupt/registry)；零回归对
-      ONNX / TorchScript；K-quants / mmap / llama.cpp 架构 key 留待后续切片
+
+  ```text
+  `reader.py` / `writer.py`，32 字节对齐、dims 逆序、原子写入) 与 Q4_0/Q8_0
+  块量化 (`quant.py`，镜像 ggml 参考数学，字节级兼容 llama.cpp)；以
+  `llm.export_backends` entry point 接入 `EXPORT_REGISTRY`，`export_model("gguf", ...)`
+  可用；默认 F16，`quantize="q4_0"/"q8_0"` 量化 ndim≥2 且末维为 32 倍数的权重；
+  116 新 tests 全绿 (format/quant/round-trip/corrupt/registry)；零回归对
+  ONNX / TorchScript；K-quants / mmap / llama.cpp 架构 key 留待后续切片
+  ```
 
 #### 13.4 模型压缩
 
@@ -527,16 +558,20 @@
       `llm.export_backends` entry point, ADR-011)
 - [ ] 支持 TensorRT 优化 — **前置条件已完成**，剩下的是 engine 构建与动态 shape
       profile 管理。
-      - 导出路径现已支持 KV cache：`export_decoder_for_generation`（prefill + decode
-      两张图，增量解码与 eager 误差 < 5e-7，registry 名 `onnx-generation`），
-      见 `src/llm/export/onnx.py`。
-      - 可行性详情见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：ONNX 产物
-      23 个算子全部 TensorRT 原生支持、opset 17、动态轴有效、数值误差 float32 量级。
-      - 该冗余问题原文记录为：导出强制 `use_cache=False` 时每个 token 要重算整个
-      前缀，实测 10.3× —— 现已修复。
-      - **阻塞**：TensorRT 没有 Python 3.14 的预编译 wheel
-      （`no wheels with a matching Python ABI tag (e.g., cp314)`），本机装不上，
-      需 Python ≤3.13 环境或 NVIDIA NGC 容器才能继续。
+
+  ```text
+  - 导出路径现已支持 KV cache：`export_decoder_for_generation`（prefill + decode
+  两张图，增量解码与 eager 误差 < 5e-7，registry 名 `onnx-generation`），
+  见 `src/llm/export/onnx.py`。
+  - 可行性详情见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：ONNX 产物
+  23 个算子全部 TensorRT 原生支持、opset 17、动态轴有效、数值误差 float32 量级。
+  - 该冗余问题原文记录为：导出强制 `use_cache=False` 时每个 token 要重算整个
+  前缀，实测 10.3× —— 现已修复。
+  - **阻塞**：TensorRT 没有 Python 3.14 的预编译 wheel
+  （`no wheels with a matching Python ABI tag (e.g., cp314)`），本机装不上，
+  需 Python ≤3.13 环境或 NVIDIA NGC 容器才能继续。
+  ```
+
 - [ ] 探索 Core ML 支持 (iOS 部署) — 同见 [ADR-016](docs/adr/016-tensorrt-coreml-feasibility.md)：Core ML 仅支持 CPU / Apple Silicon，本机是 A100，**无法在本机验证任何产物**，只能做静态检查；需 Apple 硬件才能推进。
 
 #### 14.3 应用框架集成
@@ -622,15 +657,19 @@
 - [x] PP + 数据并行 2D — `pp_size < world_size`: 行主序 `[DP][PP]` 网格 (PP 组连续), 引擎按 DP 组切分数据, step 边界 `allreduce_pp_dp_grads` (AVG) 平均 DP 组梯度, loss 按 PP 组 broadcast (`group_src`); 2x2 网格 bit-parity + 4 进程 CPU/gloo 引擎 e2e 全绿 + 状态字典跨 4 rank 逐位一致
 - [x] 集成 DeepSpeed ZeRO (Stage 2/3) — Stage-1 与 Stage-2 均已落地并验证；
       Stage-3 未做。
-      - Stage-1：原生 `ZeroOptimizer`，优化器状态分片 + 参数 all-gather。
-      - Stage-2：`zero_stage: 2`，逐参数 `all_reduce(AVG)` 归约后丢弃非 owned
-      梯度；CPU/gloo 与 2×GPU NCCL 双后端均与全量优化器 bit-exact 对比通过。
-      - 设计与两处实测修正见 [ADR-014](docs/adr/014-zero-stage-2-activation-sharding.md)。
-      - Stage-3（参数分片 + 重算）设计与风险见
-      [ADR-015](docs/adr/015-zero-stage-3-parameter-sharding.md)，需先评审其
-      侵入 `DecoderModel.forward` 的边界问题。
-      - 走原生实现、**不引入 DeepSpeed 依赖**，因此本项不是「加载 DeepSpeed
-      checkpoint」的二进制兼容集成，而是语义对齐。
+
+  ```text
+  - Stage-1：原生 `ZeroOptimizer`，优化器状态分片 + 参数 all-gather。
+  - Stage-2：`zero_stage: 2`，逐参数 `all_reduce(AVG)` 归约后丢弃非 owned
+  梯度；CPU/gloo 与 2×GPU NCCL 双后端均与全量优化器 bit-exact 对比通过。
+  - 设计与两处实测修正见 [ADR-014](docs/adr/014-zero-stage-2-activation-sharding.md)。
+  - Stage-3（参数分片 + 重算）设计与风险见
+  [ADR-015](docs/adr/015-zero-stage-3-parameter-sharding.md)，需先评审其
+  侵入 `DecoderModel.forward` 的边界问题。
+  - 走原生实现、**不引入 DeepSpeed 依赖**，因此本项不是「加载 DeepSpeed
+  checkpoint」的二进制兼容集成，而是语义对齐。
+  ```
+
 - [x] 3D Parallelism (DP + PP + TP) — `parallel_strategy='3d'`
 
 #### 15.6 文档与社区
