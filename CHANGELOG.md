@@ -1125,6 +1125,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The TP checkpoint roundtrip tests picked a GPU that another job had 76 of 79 GiB pinned on, then hung until the 480 s join timeout** (testing). Found by the new `just preflight`, which runs the gates back to back: the suite went red on `test_tp_checkpoint_roundtrip_four_gpu_deep_tp` while the same test had passed earlier in the day. The selector filtered on an **absolute** free-VRAM floor of 1 GiB, and a card with 2.64 GiB free cleared it — even though a neighbour held everything else and kept the device busy, so the ranks blocked inside a collective rather than OOMing. Measured directly: the test took **480 s and timed out** on that card and **10.4 s** once it ran on an idle one. Replaced the floor-only check with `_idle_gpu_devices`, which additionally requires **75% of total VRAM free** and reports the per-card free GiB in its skip message; all three call sites use it. The whole file now runs **5 passed, 0 skipped in 92 s**, and `just test-gpu` — previously 36 passed / 2 skipped — is **38 passed, 0 skipped** because the newly-idle cards let the wider tests run too. Note this was an environment-sensitive flake, not a product defect: the roundtrip logic was always correct.
 
+
+- **`uv.lock` recorded a China PyPI mirror as every package's source, so CI's `uv lock --check` rejected it on every push** (deps). The maintainer's `~/.config/uv/uv.toml` sets `mirrors.tuna.tsinghua.edu.cn` as the default index, and `uv lock` writes the resolved index into each package's `registry` field — so the committed lockfile carried **286 mirror URLs** while CI resolves against `pypi.org`. Reproduced CI's failure locally with `uv lock --check --refresh` (exit 1, "lockfile needs to be updated"); plain `uv lock --check` passed only because it hit a warm cache, which is why this survived many local runs. Regenerated with `UV_DEFAULT_INDEX=https://pypi.org/simple uv lock --no-config`; **not one `version` line changed** — all 2901 changed lines are the registry URL — and `uv lock --check --refresh` now exits 0. The mirror had been in the lockfile since well before this session (2858 references in the handover commit), meaning the first push would have failed regardless of what else was in it.
+
+### Fixed
+
 ### Fixed
 
 ### Fixed
