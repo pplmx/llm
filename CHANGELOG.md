@@ -1138,6 +1138,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Removed the orphaned `llm-net` network from `compose.yml`** (packaging). It declared a fixed `172.16.238.0/24` subnet that **no service joined** — the single `llm` service used the default network — so `docker compose up` created a bridge network, and reserved a subnet, that nothing used. Earlier audits flagged it and deliberately left it alone as an owner call; removed now. `compose.yml` still parses with the service and all three environment keys intact, and the 49 tests in `tests/serving/test_api_key.py` (including the four compose guards) stay green.
 
+
+- **Kept the upstream `astral-sh/ty-pre-commit` hook and stopped it from rewriting `uv.lock` with `--frozen --no-config`** (tooling). The previous round's fix replaced it with a local hook; that threw away upstream's maintenance to work around a flag problem. Root cause was narrower than the workaround suggested: upstream's entry is **`uv check`** (not `ty check`), and `uv check` **syncs the environment first**, so the sync re-locked `uv.lock` against whatever index the user's `uv.toml` names — flipping all 286 `registry` URLs from `pypi.org` to the mirror and undoing the state CI requires. `uv check` accepts `--frozen` (no re-lock) and `--no-config` (judge the lock against the same index CI uses), and with both the hook passes while leaving `uv.lock` byte-identical. Verified: `prek run --all-files` passes all **12** hooks with `uv.lock` unchanged, and the guard test now asserts both flags are present — removing them turns it red with the reason. The version-drift test covers `ty` again now that it carries a `rev` again.
+
+### Fixed
+
 ### Fixed
 
 ### Fixed

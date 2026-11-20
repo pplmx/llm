@@ -314,15 +314,16 @@ def test_uv_pre_commit_revision_matches_the_uv_that_resolved_the_lock():
     assert pinned.replace(".", "").isdigit(), f"uv hook rev {pinned!r} is not a release tag"
 
 
-def test_ty_runs_as_a_local_hook_against_the_project_environment():
-    """ty must not be a remote pre-commit hook.
+def test_the_ty_hook_cannot_rewrite_uv_lock():
+    """The ty hook must pass ``--frozen`` and ``--no-config`` to ``uv check``.
 
-    A remote hook builds its own virtualenv from the package spec, which runs
-    ``uv lock`` with the user's uv config. On a machine whose ``uv.toml`` sets a
-    regional mirror as the default index that rewrote every ``registry`` URL in
-    ``uv.lock`` back to the mirror, undoing the PyPI URLs CI resolves against — and
-    pre-commit reports it only as "files were modified by this hook". Running ty
-    from the project environment with ``--frozen`` touches no lockfile.
+    Upstream's entry is ``uv check``, which syncs the environment before checking.
+    A sync with a user-level ``uv.toml`` that sets a regional mirror as the default
+    index rewrites every ``registry`` URL in ``uv.lock`` (286 of them here),
+    undoing the pypi.org URLs CI resolves against — and pre-commit reports it only
+    as "files were modified by this hook" while still printing "All checks passed".
+    ``--frozen`` stops the sync from re-locking; ``--no-config`` makes it judge the
+    lock against the same index CI uses.
     """
     from pathlib import Path
 
@@ -332,20 +333,12 @@ def test_ty_runs_as_a_local_hook_against_the_project_environment():
         (Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
 
-    ty_repos = [repo for repo in config["repos"] if any(hook.get("id") == "ty" for hook in repo.get("hooks", []))]
-    assert len(ty_repos) == 1, f"expected exactly one ty hook, found {len(ty_repos)}"
-    repo = ty_repos[0]
+    ty_hooks = [hook for repo in config["repos"] for hook in repo.get("hooks", []) if hook.get("id") == "ty"]
+    assert len(ty_hooks) == 1, f"expected exactly one ty hook, found {len(ty_hooks)}"
+    args = ty_hooks[0].get("args", [])
 
-    assert repo["repo"] == "local", (
-        f"the ty hook is remote ({repo['repo']}); it would rebuild its own environment "
-        "and can rewrite uv.lock's registry URLs from the user's uv config"
-    )
-    hook = next(h for h in repo["hooks"] if h["id"] == "ty")
-    entry = hook["entry"]
-    assert "--frozen" in entry, (
-        f"the ty hook entry lacks --frozen ({entry!r}); plain `uv run` may re-lock "
-        "uv.lock against the user's index config"
-    )
-    assert hook.get("language") == "system", (
-        "a local ty hook must use language: system so it runs in the project environment rather than provisioning one"
-    )
+    for flag in ("--frozen", "--no-config"):
+        assert flag in args, (
+            f"the ty hook does not pass {flag} to `uv check` (args={args!r}); it can "
+            "then rewrite uv.lock's registry URLs from the user's uv config"
+        )
