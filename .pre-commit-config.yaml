@@ -50,7 +50,10 @@ repos:
       rev: 0.9.30
       hooks:
           - id: uv-lock
-            args: [--check]
+            # --no-config: uv.lock records pypi.org URLs (what CI resolves
+            # against), so a regional mirror in a user-level uv.toml must not make
+            # this reject the committed lockfile. Same flag as `just check`.
+            args: [--check, --no-config]
 
     # Mirrors the CI `ty check src/llm/` gate, scoped by ty.toml (non-src dirs
     # are intentionally not type-clean, so `uv check` excludes them).

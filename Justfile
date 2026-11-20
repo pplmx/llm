@@ -122,7 +122,10 @@ ty:
 
 # Full static lint gate (mirrors the CI lint job: lock freshness, ruff, ty, examples)
 check:
-    uv lock --check
+    # --no-config: uv.lock records pypi.org URLs (what CI resolves against). A
+    # user-level uv.toml that sets a regional mirror as the default index would
+    # otherwise make this reject a lockfile that is correct for everyone else.
+    uv lock --check --no-config
     uv run --frozen --group dev ruff format --check .
     uv run --frozen --group dev ruff check .
     uv run --frozen --group dev ty check src/llm/
