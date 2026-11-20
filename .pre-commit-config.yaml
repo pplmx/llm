@@ -57,10 +57,22 @@ repos:
 
     # Mirrors the CI `ty check src/llm/` gate, scoped by ty.toml (non-src dirs
     # are intentionally not type-clean, so `uv check` excludes them).
-    - repo: https://github.com/astral-sh/ty-pre-commit
-      rev: v0.0.107
+    #
+    # LOCAL hook, not astral-sh/ty-pre-commit: that hook builds its own virtualenv
+    # from the package spec, and doing so runs `uv lock` with the user's config. On
+    # a machine whose ~/.config/uv/uv.toml sets a regional mirror as the default
+    # index, that rewrote all 286 `registry` URLs in uv.lock back to the mirror on
+    # every commit -- undoing the PyPI URLs CI needs, and reporting it only as
+    # "files were modified by this hook". Running ty from the project environment
+    # with `--frozen` touches no lockfile at all.
+    - repo: local
       hooks:
           - id: ty
+            name: ty (project environment)
+            entry: uv run --frozen --group dev ty check src/llm/
+            language: system
+            pass_filenames: false
+            files: ^src/llm/
 
     # Mirror the remaining CI lint gates locally: doctests. These run on every
     # commit so a self-hosted CI runner is not needed to catch regressions.

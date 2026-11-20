@@ -253,10 +253,11 @@ def test_pre_commit_tool_revisions_match_the_locked_versions():
         (Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
 
-    # hook repo -> installed distribution name
+    # hook repo -> installed distribution name. ty is deliberately absent: it runs
+    # as a LOCAL hook against the project environment (see the config's comment), so
+    # it carries no rev to drift.
     expected = {
         "https://github.com/astral-sh/ruff-pre-commit": "ruff",
-        "https://github.com/astral-sh/ty-pre-commit": "ty",
     }
 
     mismatches: list[str] = []
@@ -285,9 +286,9 @@ def test_pre_commit_tool_revisions_match_the_locked_versions():
     if not checked:
         # The dev group is not part of every environment that runs the suite: CI's
         # `test-cov-fast` installs torch + the eval/logging extras and no dev tools,
-        # so ruff and ty are genuinely absent there. There is nothing to compare, and
+        # so ruff is genuinely absent there. There is nothing to compare, and
         # failing would punish a correct environment for a tool it never installs.
-        pytest.skip("neither ruff nor ty is installed; nothing to compare against")
+        pytest.skip("ruff is not installed; nothing to compare against")
     assert not mismatches, "\n  ".join(["hook/lock version drift:", *mismatches])
 
 
@@ -311,3 +312,40 @@ def test_uv_pre_commit_revision_matches_the_uv_that_resolved_the_lock():
     # The lock does not self-record uv's version, so assert the hook exists and is
     # a plausible release rather than pinning it against nothing.
     assert pinned.replace(".", "").isdigit(), f"uv hook rev {pinned!r} is not a release tag"
+
+
+def test_ty_runs_as_a_local_hook_against_the_project_environment():
+    """ty must not be a remote pre-commit hook.
+
+    A remote hook builds its own virtualenv from the package spec, which runs
+    ``uv lock`` with the user's uv config. On a machine whose ``uv.toml`` sets a
+    regional mirror as the default index that rewrote every ``registry`` URL in
+    ``uv.lock`` back to the mirror, undoing the PyPI URLs CI resolves against — and
+    pre-commit reports it only as "files were modified by this hook". Running ty
+    from the project environment with ``--frozen`` touches no lockfile.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+
+    ty_repos = [repo for repo in config["repos"] if any(hook.get("id") == "ty" for hook in repo.get("hooks", []))]
+    assert len(ty_repos) == 1, f"expected exactly one ty hook, found {len(ty_repos)}"
+    repo = ty_repos[0]
+
+    assert repo["repo"] == "local", (
+        f"the ty hook is remote ({repo['repo']}); it would rebuild its own environment "
+        "and can rewrite uv.lock's registry URLs from the user's uv config"
+    )
+    hook = next(h for h in repo["hooks"] if h["id"] == "ty")
+    entry = hook["entry"]
+    assert "--frozen" in entry, (
+        f"the ty hook entry lacks --frozen ({entry!r}); plain `uv run` may re-lock "
+        "uv.lock against the user's index config"
+    )
+    assert hook.get("language") == "system", (
+        "a local ty hook must use language: system so it runs in the project environment rather than provisioning one"
+    )

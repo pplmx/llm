@@ -16,10 +16,3 @@ services:
             LLM_SERVING_HOST: 0.0.0.0
             LLM_SERVING_API_KEY: ${LLM_SERVING_API_KEY:?set LLM_SERVING_API_KEY, e.g. export LLM_SERVING_API_KEY=$(openssl rand -hex 32)}
             LLM_SERVING_MODEL_PATH: ${LLM_SERVING_MODEL_PATH:-}
-
-networks:
-    llm-net:
-        name: llm-net
-        ipam:
-            config:
-                -   subnet: 172.16.238.0/24
