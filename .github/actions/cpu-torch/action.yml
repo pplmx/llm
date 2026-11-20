@@ -117,9 +117,16 @@ runs:
         after = versions("uv.lock")
         changed = []
         for name in sorted(before.keys() & after.keys()):
-            # Compare public versions: the CPU rebuild carries a `+cpu` local
-            # version segment, which is the whole point of the swap.
-            if before[name] != after[name].split("+", 1)[0]:
+            # Compare PUBLIC versions on both sides. A local version segment
+            # (``+cpu``, ``+cu.13.0.torch.2.14``) marks which build a version
+            # resolves to; it is not a version change. Stripping only the ``after``
+            # side made every package with a local segment look like drift: with
+            # flash-attn pinned to the Astral wheel
+            # (``2.8.3.post1+cu.13.0.torch.2.14``), ``before`` kept the suffix while
+            # ``after`` had ``2.8.3.post1``, so the CPU re-lock reported
+            # ``flash-attn: 2.8.3.post1+cu.13.0.torch.2.14 -> 2.8.3.post1+cu.13.0.torch.2.14``
+            # -- identical on both sides -- and failed the job.
+            if before[name].split("+", 1)[0] != after[name].split("+", 1)[0]:
                 changed.append(f"{name}: {before[name]} -> {after[name]}")
         print("\n".join(changed))
         PY
